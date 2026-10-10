@@ -9,9 +9,9 @@ playwright-report/
 coverage/
 *.log
 
-# PDFs only needed to rebuild the search index (bun run index)
-.data/lib/
+# .data/lib is deliberately NOT ignored: the fetch stage reuses a local download.
 .data/perf/
+.data/searchindex.sqlite
 
 .env
 .env.*

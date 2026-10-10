@@ -25,10 +25,14 @@ ssh \
 	-o StrictHostKeyChecking=accept-new \
 	"$REMOTE" true
 
-echo "Building release ${VERSION}..."
-VERSION="$VERSION" PORT="$PORT" bash "$ROOT/scripts/release.sh"
-
 LOCAL_ARCHIVE="$ROOT/release/$ARCHIVE"
+if [[ -f "$LOCAL_ARCHIVE" && "${REBUILD:-0}" != "1" ]]; then
+	echo "Reusing existing ${LOCAL_ARCHIVE} (REBUILD=1 to rebuild; bump the version for new code)."
+else
+	echo "Building release ${VERSION}..."
+	VERSION="$VERSION" PORT="$PORT" bash "$ROOT/scripts/release.sh"
+fi
+
 [[ -f "$LOCAL_ARCHIVE" ]] || {
 	echo "Release archive was not created: $LOCAL_ARCHIVE"
 	exit 1

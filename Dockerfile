@@ -1,10 +1,18 @@
+# syntax=docker/dockerfile:1.7
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS fetch
 
 WORKDIR /app
 
 COPY scripts/Get-SMPTEDocs.ps1 ./scripts/Get-SMPTEDocs.ps1
 
-RUN pwsh -NoProfile -File scripts/Get-SMPTEDocs.ps1
+COPY package.json .data* /seed/
+
+# Force a refresh: docker build --build-arg FORCE=1 .
+ARG FORCE=
+RUN --mount=type=cache,target=/cache/smpte \
+    mkdir -p /cache/smpte && rm -f /seed/package.json && cp -an /seed/. /cache/smpte/ \
+    && pwsh -NoProfile -File scripts/Get-SMPTEDocs.ps1 -DataDir /cache/smpte -OutDir /cache/smpte/lib ${FORCE:+-Force} \
+    && mkdir -p .data && cp -a /cache/smpte/. .data/
 
 
 FROM oven/bun:1.4.2 AS build
@@ -18,17 +26,16 @@ RUN apt-get update \
 COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile
 
+COPY scripts/Build-SearchIndex.ts ./scripts/Build-SearchIndex.ts
+COPY --from=fetch /app/.data ./.data
+RUN bun run index \
+    && test -s .data/searchindex.sqlite \
+    && test -s .data/versions.json
+
 COPY tsconfig.json ./
 COPY src ./src
 COPY scripts ./scripts
-
-COPY --from=fetch /app/.data ./.data
-
-RUN bun run index \
-    && test -s .data/searchindex.sqlite \
-    && test -s .data/versions.json \
-    && bun run build:app \
-    && bun run build:mcp
+RUN bun run build:app && bun run build:mcp
 
 
 FROM oven/bun:1.4.2
@@ -36,6 +43,7 @@ FROM oven/bun:1.4.2
 WORKDIR /app
 
 ENV NODE_ENV=production \
+    HOST=0.0.0.0 \
     PORT=3000
 
 COPY package.json bun.lock ./
@@ -43,7 +51,7 @@ RUN bun install --frozen-lockfile --production
 
 COPY --from=build /app/src ./src
 COPY --from=build /app/dist ./dist
-COPY --from=build /app/.data ./.data
+COPY --from=build /app/.data/searchindex.sqlite /app/.data/versions.json /app/.data/pdf-urls.json ./.data/
 
 USER bun
 

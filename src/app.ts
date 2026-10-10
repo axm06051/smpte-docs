@@ -72,6 +72,26 @@ acList.addEventListener('mouseover', (e) =>
 acList.addEventListener('focusin', (e) =>
   showPreview((e.target as HTMLElement).closest<HTMLElement>('.ac-item')?.dataset.slug),
 );
+
+// Keyboard model for the combobox: focus stays in the input, ArrowUp/Down move aria-activedescendant.
+let acActive = -1;
+const acItems = () => Array.from(acList.querySelectorAll<HTMLElement>('.ac-item'));
+const acIsOpen = () => ac.classList.contains('open');
+function closeAc() {
+  ac.classList.remove('open');
+  query.setAttribute('aria-expanded', 'false');
+  setAcActive(-1);
+}
+function setAcActive(i: number) {
+  const items = acItems();
+  acActive = i;
+  items.forEach((el, n) => el.setAttribute('aria-selected', String(n === i)));
+  const el = items[i];
+  if (!el) return void query.removeAttribute('aria-activedescendant');
+  query.setAttribute('aria-activedescendant', el.id);
+  el.scrollIntoView({ block: 'nearest' });
+  showPreview(el.dataset.slug);
+}
 const searchable = docs.map((d) => norm(`${d.designator} ${d.name} ${d.slug}`));
 
 function highlight(text: string, words: string[]) {
@@ -149,8 +169,7 @@ function render(ids: Set<number>, q: string) {
 function renderAutocomplete() {
   const q = norm(query.value.trim());
   if (!q) {
-    ac.classList.remove('open');
-    query.setAttribute('aria-expanded', 'false');
+    closeAc();
     acList.innerHTML = '';
     showPreview(undefined);
     return;
@@ -161,12 +180,13 @@ function renderAutocomplete() {
     ? matches
         .map(
           (d, i) =>
-            `<li class="ac-item" id="ac-i-${i}" role="option" data-slug="${esc(d.slug)}" tabindex="0"><span class="d">${highlight(d.designator, words)}</span><span class="t">${highlight(d.name, words)}</span></li>`,
+            `<li class="ac-item" id="ac-i-${i}" role="option" data-slug="${esc(d.slug)}" tabindex="-1"><span class="d">${highlight(d.designator, words)}</span><span class="t">${highlight(d.name, words)}</span></li>`,
         )
         .join('')
     : '<li class="ac-none" role="presentation">No suggestions</li>';
   showPreview(undefined);
   showPreview(matches[0]?.slug);
+  setAcActive(-1);
   ac.classList.add('open');
   query.setAttribute('aria-expanded', 'true');
 }
@@ -609,17 +629,14 @@ query.addEventListener('input', () => {
 acList.addEventListener('click', (event) => {
   const item = (event.target as HTMLElement).closest<HTMLElement>('.ac-item');
   if (!item?.dataset.slug) return;
-  query.value = item.dataset.slug;
-  ac.classList.remove('open');
-  query.setAttribute('aria-expanded', 'false');
-  localSearch();
+  pickAc(item);
 });
-query.addEventListener('blur', () =>
-  setTimeout(() => {
-    ac.classList.remove('open');
-    query.setAttribute('aria-expanded', 'false');
-  }, 100),
-);
+function pickAc(item: HTMLElement) {
+  query.value = item.dataset.slug ?? query.value;
+  closeAc();
+  localSearch();
+}
+query.addEventListener('blur', () => setTimeout(closeAc, 100));
 category.addEventListener('change', () => {
   detailController?.abort();
   localSearch();
@@ -665,15 +682,36 @@ document.getElementById('colBtn')?.addEventListener('click', () => {
 });
 
 query.addEventListener('keydown', (event) => {
-  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
-    event.preventDefault();
-    query.focus();
-    query.select();
-  }
-  if (event.key === '/' && document.activeElement === document.body) {
-    event.preventDefault();
-    query.focus();
-    query.select();
+  if (event.isComposing) return;
+  const items = acItems();
+  switch (event.key) {
+    case 'ArrowDown':
+    case 'ArrowUp': {
+      event.preventDefault();
+      const down = event.key === 'ArrowDown';
+      if (!acIsOpen()) {
+        if (query.value.trim()) renderAutocomplete();
+        else if (down) rows()[0] && selectRow(rows()[0], true); // empty box: step into the tree
+        return;
+      }
+      if (!items.length) return;
+      // Wraps through -1 (nothing active) so the user can get back to the plain query.
+      const n = items.length + 1;
+      setAcActive(((acActive + 1 + (down ? 1 : -1) + n) % n) - 1);
+      return;
+    }
+    case 'Enter':
+      if (acIsOpen() && items[acActive]) {
+        event.preventDefault();
+        pickAc(items[acActive]);
+      }
+      return;
+    case 'Escape':
+      if (acIsOpen()) {
+        event.preventDefault();
+        closeAc();
+      }
+      return;
   }
 });
 document.addEventListener('keydown', (event) => {
