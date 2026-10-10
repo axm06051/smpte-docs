@@ -1,0 +1,29 @@
+{
+  "version": "0.3.3",
+  "private": true,
+  "scripts": {
+    "build:app": "bun build src/app.ts --outfile src/app.js --target browser --minify",
+    "build:mcp": "bun build --compile --target=browser ./src/mcp-app.html --outfile ./dist/mcp-app.html",
+    "build": "bun run format && bun run build:app && bun run build:mcp",
+    "dev": "bun run typecheck && bun run build && bun --watch src/server.ts",
+    "fetch": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Get-SMPTEDocs.ps1",
+    "format:check": "prettier --check .",
+    "format": "prettier --write .",
+    "index": "bun scripts/Build-SearchIndex.ts",
+    "start": "bun run build && bun src/server.ts",
+    "test": "bash ./scripts/test.sh",
+    "typecheck": "bun x tsc --noEmit"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/bun": "^1.4.2",
+    "prettier": "^3.9.9"
+  },
+  "dependencies": {
+    "htmx.org": "2.0.10",
+    "@modelcontextprotocol/ext-apps": "^2.0.0",
+    "@modelcontextprotocol/server": "^2.0.0",
+    "fixi-js": "^0.9.4",
+    "zod": "^4.2.0"
+  }
+}

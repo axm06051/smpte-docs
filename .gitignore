@@ -1,0 +1,16 @@
+node_modules/
+
+*.log
+
+dist/
+src/app.js
+.data
+
+.tools/
+playwright-report/
+test-results/
+
+.env
+
+release/
+.release/

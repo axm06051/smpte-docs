@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>SMPTE Document Library</title>
+    <script>
+      document.documentElement.dataset.theme = localStorage.getItem('smpte-theme') || 'system';
+    </script>
+    <link rel="stylesheet" href="/style.css" />
+    <script src="/htmx.js" defer></script>
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <h1>SMPTE Document Library</h1>
+    <div class="sub">
+      Snapshot of
+      <a href="https://pub.smpte.org/doc/" target="_blank" rel="noopener">pub.smpte.org/doc/</a>.
+      Browse the suite tree or search — press <kbd>/</kbd> or <kbd>Ctrl</kbd>+<kbd>K</kbd> to jump
+      to search.
+    </div>
+    <form class="toolbar">
+      <div class="search-wrap">
+        <input
+          type="search"
+          id="q"
+          name="q"
+          autocomplete="off"
+          spellcheck="false"
+          role="combobox"
+          aria-expanded="false"
+          aria-controls="acList"
+          aria-autocomplete="list"
+          placeholder="Search designator or title (e.g. st 2110-20, MXF, color)..."
+        />
+        <div class="ac" id="ac" aria-live="polite">
+          <ul class="ac-list" id="acList" role="listbox" aria-label="Suggestions"></ul>
+          <div class="ac-preview" id="acPrev"></div>
+        </div>
+      </div>
+      <select id="cat" name="cat" aria-label="Category">
+        <option value="">All categories</option>
+        <option value="ST">ST</option>
+        <option value="RP">RP</option>
+        <option value="EG">EG</option>
+        <option value="RDD">RDD</option>
+        <option value="OV">OV</option>
+      </select>
+      <label><input type="checkbox" id="re" name="re" value="1" /> Regex</label>
+      <label><input type="checkbox" id="full" name="full" value="1" /> PDF text</label>
+      <button type="button" class="secondary" id="expBtn">Expand all</button>
+      <button type="button" class="secondary" id="colBtn">Collapse all</button>
+      <label class="theme-control">
+        <span>Theme</span>
+        <select id="theme" aria-label="Color mode">
+          <option value="system">System</option>
+          <option value="light">Light</option>
+          <option value="dark">Dark</option>
+        </select>
+      </label>
+    </form>
+    <div class="meta" id="meta" aria-live="polite">{{META}}</div>
+    <ul class="list" id="results" role="tree" aria-label="SMPTE documents">
+      <!-- RESULTS -->
+    </ul>
+    <script id="search-data" type="application/json">
+      {{SEARCH_INDEX}}
+    </script>
+    <div class="detail" id="detail" aria-live="polite"></div>
+    <div class="footer">
+      <span>Source: embedded catalog + dated versions</span
+      ><span
+        ><a href="https://pub.smpte.org/doc/" target="_blank" rel="noopener"
+          >Open full index &#8599;</a
+        ></span
+      >
+    </div>
+  </body>
+</html>

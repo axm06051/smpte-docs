@@ -1,0 +1,22 @@
+.git
+.gitignore
+node_modules/
+dist/
+.release/
+release/
+test-results/
+playwright-report/
+coverage/
+*.log
+
+# PDFs only needed to rebuild the search index (bun run index)
+.data/lib/
+.data/perf/
+
+.env
+.env.*
+!.env.example
+
+*.tar
+*.tar.gz
+*.zip

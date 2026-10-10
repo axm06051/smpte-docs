@@ -1,0 +1,13 @@
+FROM oven/bun:1.4.2
+
+WORKDIR /app
+
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile
+RUN bunx playwright install --with-deps chromium
+
+COPY . .
+
+RUN bun run build:app && bun run build:mcp
+
+CMD ["bunx", "playwright", "test"]

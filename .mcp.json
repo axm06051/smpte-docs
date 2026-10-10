@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "smpte-docs": {
+      "type": "http",
+      "url": "http://localhost:3000/mcp",
+      "headers": {
+        "Authorization": "Bearer ${env:MCP_TOKEN}"
+      },
+      "tools": ["search_smpte", "read_smpte_document"]
+    }
+  }
+}
