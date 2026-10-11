@@ -1,10 +1,11 @@
 import { expect, test } from '@playwright/test';
 import { readFileSync } from 'node:fs';
+import { serverSource } from './support';
 
-const html = readFileSync('src/index.html', 'utf8');
-const server = readFileSync('src/server.ts', 'utf8');
-const app = readFileSync('src/app.ts', 'utf8');
-const shared = readFileSync('src/shared.ts', 'utf8'); // markup shared by server and page
+const html = readFileSync('src/library/client/index.html', 'utf8');
+const server = serverSource();
+const app = readFileSync('src/library/client/app.ts', 'utf8');
+const shared = readFileSync('src/library/render.ts', 'utf8'); // markup shared by server and page
 
 test('responsive search keeps the normal query path local', () => {
   expect(html).not.toContain('hx-get="/search"');
@@ -48,7 +49,7 @@ test('HTMX PDF text search preserves master snippets in matching rows', () => {
   expect(server).toContain('SELECT slug, text FROM docs WHERE docs MATCH ?');
   expect(server).not.toContain('snippet(docs');
   expect(server).not.toContain('bm25(docs)');
-  expect(server).toContain('bodyMatch(r.slug, r.text, rx)');
+  expect(server).toContain('bodyMatch(r.slug, r.text, scan)');
   expect(server).toContain('<div class=\"sn\">');
   expect(server).toContain('highlight(');
   expect(server).toContain("u.searchParams.get('full') === '1'");
@@ -92,8 +93,8 @@ test('full-text tree search reuses the snippet hit set instead of querying twice
 });
 
 test('tree preview and theme colors survive local rendering', () => {
-  const app = readFileSync('src/app.ts', 'utf8');
-  const css = readFileSync('src/style.css', 'utf8');
+  const app = readFileSync('src/library/client/app.ts', 'utf8');
+  const css = readFileSync('src/library/client/style.css', 'utf8');
 
   expect(app).toContain('treeRow(');
   expect(shared).toContain('data-preview="/detail/${esc(d.slug)}"');

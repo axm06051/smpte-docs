@@ -624,3 +624,10 @@ mark {
   min-width: 92px;
   padding: 6px 8px;
 }
+
+/* Off-screen top-level rows skip layout and paint (a keystroke re-renders ~670 of them); `auto` makes
+   the browser remember each row's real height once it has been shown, so scrolling does not jump. */
+#results > .row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 34px;
+}

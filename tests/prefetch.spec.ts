@@ -150,7 +150,8 @@ test('speculative concurrency is capped', async ({ page }) => {
     await rows.nth(i).hover();
     await page.waitForTimeout(90);
   }
-  await page.waitForTimeout(1200);
+  await expect.poll(() => max).toBeGreaterThan(0);
+  await expect.poll(() => inflight, { timeout: 4000 }).toBe(0); // queue drained
   expect(max).toBeGreaterThan(0);
   expect(max).toBeLessThanOrEqual(2);
   const s = await stats(page);

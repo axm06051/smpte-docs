@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { firstBodyMatch, isTableOfContents } from '../src/toc';
+import { firstBodyMatch, isTableOfContents } from '../src/platform/toc';
 
 const toc =
   '1 Scope 5 2 Normative references 5 3 Terms 6 4 Traffic shaping . . . . . . . . . . . . 12 4.1 General 12 5 Timing model . . . . . . . . . . . . 14 5.1 Overview 14 5.2 Clock 15 6 Annex A 20 ';

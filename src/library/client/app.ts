@@ -1,4 +1,6 @@
-import { esc, highlight, previewHtml, treeRow, type SearchDoc } from './shared';
+import type { SearchDoc } from '../../catalog/doc';
+import { esc } from '../../platform/text';
+import { highlight, previewHtml, treeRow } from '../render';
 
 // ids are array indexes, so docs[id] is the document and docs[-1] (no parent) is undefined.
 const docs = JSON.parse(document.getElementById('search-data')!.textContent!) as SearchDoc[];
@@ -160,6 +162,9 @@ function localSearch() {
   renderLocalSearch();
 }
 
+// The server scans PDF text synchronously, so a request per keystroke would queue scans behind
+// each other (aborting the fetch does not stop a scan that already started).
+const FULL_DEBOUNCE_MS = 200;
 let fullTimer = 0;
 let fullController: AbortController | undefined;
 let detailController: AbortController | undefined;
@@ -168,7 +173,8 @@ function requestFullSearch() {
   clearTimeout(fullTimer);
   fullController?.abort();
   // Empty query: the local render already shows the full tree; don't fetch ~570 KB of it again.
-  if (!query.value.trim()) return;
+  // One character matches nearly every PDF (a multi-second scan on the server) and says nothing.
+  if (query.value.trim().length < 2) return;
   const controller = (fullController = new AbortController());
   fullTimer = window.setTimeout(async () => {
     const params = new URLSearchParams({
@@ -185,7 +191,7 @@ function requestFullSearch() {
       results.innerHTML = html;
       meta.textContent = `${results.querySelectorAll('li.row:not(.suite)').length} matching documents`;
     } catch {}
-  }, 50);
+  }, FULL_DEBOUNCE_MS);
 }
 
 function updateHash() {

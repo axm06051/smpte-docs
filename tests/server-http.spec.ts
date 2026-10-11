@@ -37,7 +37,15 @@ test('static assets are cached, compressed and revalidate with a 304', async ({ 
 });
 
 test('only the public files are served from src', async ({ request }) => {
-  for (const path of ['/server.ts', '/catalog.ts', '/mcp.ts', '/app.ts', '/logger.ts'])
+  for (const path of [
+    '/server.ts',
+    '/catalog.ts',
+    '/mcp.ts',
+    '/app.ts',
+    '/logger.ts',
+    '/catalog/data.ts',
+    '/library/client/app.ts',
+  ])
     expect((await request.get(path)).status(), path).toBe(404);
 });
 

@@ -13,13 +13,16 @@ export default defineConfig({
 
   fullyParallel: true,
 
+  retries: process.env.CI ? 1 : 0,
+
   reporter: [['list'], ['html', { open: 'never' }]],
 
   use: {
     baseURL: process.env.BASE_URL ?? `http://127.0.0.1:${PORT}`,
     browserName: 'chromium',
     headless: true,
-    trace: 'retain-on-failure',
+    // Tracing snapshots the DOM on every action; with a ~700-row page that made each test ~1.5s slower.
+    trace: 'on-first-retry',
   },
 
   webServer: {

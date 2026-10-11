@@ -1,3 +1,5 @@
+// MCP server slice: the search_smpte and read_smpte_document tools, the in-chat search UI and the
+// smpte://doc resources, behind an optional bearer token.
 import { timingSafeEqual } from 'node:crypto';
 import { createMcpHandler, McpServer, ResourceTemplate } from '@modelcontextprotocol/server';
 import {
@@ -6,212 +8,17 @@ import {
   RESOURCE_MIME_TYPE,
 } from '@modelcontextprotocol/ext-apps/server';
 import { z } from 'zod';
-import RAW from './catalog';
-import { db, rowIds } from './db';
-import { logger, since } from './logger';
-import { BASE, esc, pl, tokens as wordsOf } from './shared';
-import { noiseReason } from './toc';
+import { docs } from '../catalog';
+import { BASE } from '../catalog/doc';
+import { logger, since } from '../platform/logger';
+import { esc, pl } from '../platform/text';
+import { baseOf, passagesFor, readText, resolveSlug, titleOf } from './documents';
+import { searchDocs } from './search';
 
-const docs = new Map(RAW.map(([slug, title]) => [slug, title]));
 const MCP_TOKEN = process.env.MCP_TOKEN || '';
 
 const resourceUri = 'ui://smpte-search/search.html';
 const documentUri = 'smpte://doc/{slug}';
-
-const baseOf = (slug: string) => slug.split('_')[0];
-const titleOf = (slug: string) => docs.get(baseOf(slug)) ?? slug;
-const editionsByBase = new Map<string, string[]>();
-for (const slug of rowIds.keys()) {
-  if (!slug.includes('_')) continue;
-  const list = editionsByBase.get(baseOf(slug)) ?? [];
-  list.push(slug);
-  editionsByBase.set(baseOf(slug), list);
-}
-
-// Like the page's tokens(), but a bare "-" is not a search term.
-const tokens = (q: string) => wordsOf(q).filter((w) => /[a-z0-9]/.test(w));
-
-const STOP = new Set(
-  'a an and are as at be by can do does for from how i in is it my of on or that the this to what when where which why with'.split(
-    ' ',
-  ),
-);
-const terms = (q: string) => {
-  const all = tokens(q);
-  const kept = all.filter((w) => !STOP.has(w));
-  return kept.length ? kept : all;
-};
-
-const fts = (words: string[], op: 'AND' | 'OR') => words.map((w) => `"${w}"*`).join(` ${op} `);
-const clean = (s: string) => s.replace(/\s+/g, ' ').trim();
-
-/** Accepts "st2110-21", "ST 2110-21", an edition slug, or an smpte:// path segment. */
-const resolveSlug = (input: string) => {
-  let s = input.trim().toLowerCase();
-  try {
-    s = decodeURIComponent(s);
-  } catch {}
-  for (const candidate of [s, s.replace(/\s+/g, '')]) if (rowIds.has(candidate)) return candidate;
-  const base = baseOf(s.replace(/\s+/g, ''));
-  if (rowIds.has(base)) return base;
-  return editionsByBase.get(base)?.[0];
-};
-
-const readText = (slug: string) => {
-  const id = rowIds.get(slug);
-  if (!id) return null;
-  const row = db.query('SELECT text FROM docs WHERE rowid = ?').get(id) as { text: string } | null;
-  return row?.text ?? null;
-};
-
-// Title/designator index so "ST 2110-21" or "traffic shaping" finds the right spec
-// even when body-text ranking prefers a document that merely mentions it.
-const isMatch = (set: Set<string>, w: string) =>
-  set.has(w) || (w.length >= 3 && [...set].some((t) => t.startsWith(w)));
-const catalog = RAW.map(([slug, title]) => ({
-  slug,
-  title,
-  designator: new Set(tokens(`${title.split(',')[0]} ${slug}`)),
-  all: new Set(tokens(`${title} ${slug}`)),
-}));
-
-type Hit = {
-  slug: string;
-  title: string;
-  uri: string;
-  url: string;
-  snippet: string;
-  editions: string[];
-  via: 'title' | 'text';
-};
-
-// FTS snippet() picks the densest region, which is often the TOC; fall back to the first body match.
-const bodySnippet = (slug: string, fts: string, words: string[]) => {
-  const reason = noiseReason(fts);
-  if (!reason) return fts;
-  logger.debug('MCP snippet is noise; looking for a body passage', { slug, reason });
-  const text = readText(slug);
-  if (text === null) {
-    logger.warning('MCP snippet fallback skipped: document text unavailable', { slug });
-    return fts;
-  }
-  for (const w of words) {
-    const [p] = passagesFor(text, w, 1, 150);
-    if (p) {
-      logger.trace('MCP snippet replaced by body passage', { slug, term: w, at: p.at });
-      return p.text;
-    }
-  }
-  logger.warning('MCP snippet fallback found no body passage; returning noisy snippet', {
-    slug,
-    terms: words.length,
-  });
-  return fts;
-};
-
-const passage = (slug: string, words: string[]) => {
-  const id = rowIds.get(slug);
-  if (!id) return '';
-  const row = db
-    .query(
-      `SELECT snippet(docs, 1, '«', '»', ' … ', 48) AS s FROM docs WHERE docs MATCH ? AND rowid = ?`,
-    )
-    .get(fts(words, 'OR'), id) as { s: string } | null;
-  return clean(row?.s || (readText(slug) ?? '').slice(0, 300));
-};
-
-const makeHit = (slug: string, snippet: string, via: Hit['via']): Hit => ({
-  slug,
-  title: titleOf(slug),
-  uri: `smpte://doc/${encodeURIComponent(slug)}`,
-  url: `${BASE}/doc/${encodeURIComponent(slug)}/`,
-  snippet,
-  editions: editionsByBase.get(slug) ?? [],
-  via,
-});
-
-const searchDocs = (q: string, limit: number): Hit[] => {
-  const started = performance.now();
-  const words = terms(q);
-
-  logger.trace('SMPTE search tokenized', {
-    termCount: words.length,
-    limit,
-  });
-
-  if (!words.length) {
-    logger.debug('SMPTE search produced no tokens', { query: q });
-    return [];
-  }
-
-  const hits = new Map<string, Hit>();
-
-  const need = words.length === 1 ? 1 : Math.max(2, Math.ceil(words.length / 2));
-  catalog
-    .map((d) => ({
-      d,
-      hit: words.filter((w) => isMatch(d.all, w)).length,
-      desig: words.filter((w) => isMatch(d.designator, w)).length,
-    }))
-    .filter((x) => x.hit >= need)
-    .sort((a, b) => b.desig - a.desig || b.hit - a.hit || a.d.title.length - b.d.title.length)
-    .slice(0, Math.min(5, limit))
-    .forEach(({ d }) => hits.set(d.slug, makeHit(d.slug, '', 'title')));
-
-  const run = (match: string) =>
-    db
-      .query(
-        `SELECT slug, snippet(docs, 1, '«', '»', ' … ', 48) AS s
-         FROM docs WHERE docs MATCH ? ORDER BY bm25(docs) LIMIT ?`,
-      )
-      .all(match, limit * 4) as { slug: string; s: string }[];
-
-  let rows = run(fts(words, 'AND'));
-  logger.trace('SMPTE full-text query completed', {
-    strategy: 'AND',
-    rows: rows.length,
-    ms: since(started),
-  });
-
-  if (!rows.length && words.length > 1) {
-    logger.debug('SMPTE search using OR fallback', {
-      query: q,
-      terms: words.length,
-    });
-
-    rows = run(fts(words, 'OR'));
-  }
-
-  for (const row of rows) {
-    const base = baseOf(row.slug);
-    const existing = hits.get(base);
-    if (existing) {
-      if (!existing.snippet) existing.snippet = bodySnippet(row.slug, clean(row.s), words);
-    } else if (hits.size < limit) {
-      hits.set(base, makeHit(base, bodySnippet(row.slug, clean(row.s), words), 'text'));
-    }
-  }
-
-  for (const hit of hits.values()) {
-    if (!hit.snippet) hit.snippet = passage(resolveSlug(hit.slug) ?? hit.slug, words);
-  }
-  return [...hits.values()];
-};
-
-const passagesFor = (text: string, needle: string, max = 5, radius = 600) => {
-  const low = text.toLowerCase();
-  const n = needle.toLowerCase();
-  const out: { at: number; text: string }[] = [];
-  let i = 0;
-  while (out.length < max && (i = low.indexOf(n, i)) >= 0) {
-    const chunk = text.slice(Math.max(0, i - radius), i + n.length + radius);
-    const reason = noiseReason(text.slice(Math.max(0, i - 200), i + 200));
-    if (reason) logger.trace('MCP passage skipped as noise', { needle: n, reason, at: i });
-    else out.push({ at: i, text: clean(chunk) });
-    i += radius * 2;
-  }
-  return out;
-};
 
 const authorized = (req: Request) => {
   if (!MCP_TOKEN) return true;
@@ -385,7 +192,7 @@ ${
     'SMPTE Documentation',
     new ResourceTemplate(documentUri, {
       list: async () => ({
-        resources: [...docs].map(([slug, title]) => ({
+        resources: docs.map(({ slug, title }) => ({
           uri: `smpte://doc/${encodeURIComponent(slug)}`,
           name: title,
           title,

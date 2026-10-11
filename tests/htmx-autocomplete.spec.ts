@@ -1,9 +1,10 @@
 import { expect, test } from '@playwright/test';
 import { readFileSync } from 'node:fs';
+import { serverSource } from './support';
 
 test('autocomplete keeps the accessible listbox and preview shell', () => {
-  const html = readFileSync('src/index.html', 'utf8');
-  const app = readFileSync('src/app.ts', 'utf8');
+  const html = readFileSync('src/library/client/index.html', 'utf8');
+  const app = readFileSync('src/library/client/app.ts', 'utf8');
 
   expect(html).toContain('role="combobox"');
   expect(html).toContain('aria-controls="acList"');
@@ -14,8 +15,8 @@ test('autocomplete keeps the accessible listbox and preview shell', () => {
 });
 
 test('autocomplete preview is local and the server no longer serves dead autocomplete routes', () => {
-  const server = readFileSync('src/server.ts', 'utf8');
-  const app = readFileSync('src/app.ts', 'utf8');
+  const server = serverSource();
+  const app = readFileSync('src/library/client/app.ts', 'utf8');
 
   expect(app).toContain('class="ac-item"');
   expect(app).toContain('role="option"');
@@ -25,8 +26,8 @@ test('autocomplete preview is local and the server no longer serves dead autocom
 });
 
 test('autocomplete keeps the accessible shell contract', () => {
-  const html = readFileSync('src/index.html', 'utf8');
-  const css = readFileSync('src/style.css', 'utf8');
+  const html = readFileSync('src/library/client/index.html', 'utf8');
+  const css = readFileSync('src/library/client/style.css', 'utf8');
 
   expect(html).toMatch(/<div class="ac" id="ac"(?:\s[^>]*)?>/);
   expect(html).toContain(
@@ -37,7 +38,7 @@ test('autocomplete keeps the accessible shell contract', () => {
 });
 
 test('autocomplete uses local filtering and preserves highlighting', () => {
-  const app = readFileSync('src/app.ts', 'utf8');
+  const app = readFileSync('src/library/client/app.ts', 'utf8');
 
   expect(app).toContain('docs.filter');
   expect(app).toContain('.slice(0, 8)');

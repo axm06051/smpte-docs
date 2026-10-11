@@ -18,8 +18,10 @@ export const NOISE_CONFIG = {
 export type NoiseReason = 'toc' | 'blob';
 
 // Table of contents: dot leaders or a run of section numbers.
+const DOT_LEADERS = new RegExp(`\\.{${NOISE_CONFIG.tocDotRun},}`);
+const BLOB = new RegExp(`\\S{${NOISE_CONFIG.blobRun},}`);
 export const isTableOfContents = (chunk: string) => {
-  if (new RegExp(`\\.{${NOISE_CONFIG.tocDotRun},}`).test(chunk)) return true;
+  if (DOT_LEADERS.test(chunk)) return true;
   const words = chunk.split(/\s+/).filter(Boolean);
   return (
     words.filter((w) => /^[\d.]+$/.test(w)).length / (words.length || 1) >
@@ -28,7 +30,7 @@ export const isTableOfContents = (chunk: string) => {
 };
 
 // Embedded binary (base64 images etc.) extracted as text: very long runs with no whitespace.
-export const isBlob = (chunk: string) => new RegExp(`\\S{${NOISE_CONFIG.blobRun},}`).test(chunk);
+export const isBlob = (chunk: string) => BLOB.test(chunk);
 
 export const noiseReason = (chunk: string): NoiseReason | null =>
   isTableOfContents(chunk) ? 'toc' : isBlob(chunk) ? 'blob' : null;
@@ -43,7 +45,9 @@ export function firstBodyMatch(
   onSkip?: (reason: NoiseReason, index: number) => void,
   window: number = NOISE_CONFIG.window,
 ): number {
-  const g = new RegExp(rx.source, rx.flags.includes('g') ? rx.flags : rx.flags + 'g');
+  // A caller scanning many texts passes one global regex; reuse it instead of recompiling per text.
+  const g = rx.global ? rx : new RegExp(rx.source, rx.flags + 'g');
+  g.lastIndex = 0;
   for (let m = g.exec(text); m; m = g.exec(text)) {
     const i = m.index;
     const reason = noiseReason(text.slice(Math.max(0, i - window), i + window));

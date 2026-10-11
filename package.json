@@ -2,8 +2,8 @@
   "version": "0.3.5",
   "private": true,
   "scripts": {
-    "build:app": "bun build src/app.ts --outfile src/app.js --target browser --minify",
-    "build:mcp": "bun build --compile --target=browser ./src/mcp-app.html --outfile ./dist/mcp-app.html",
+    "build:app": "bun build src/library/client/app.ts --outfile src/library/client/app.js --target browser --minify",
+    "build:mcp": "bun build --compile --target=browser ./src/mcp/app.html --outfile ./dist/mcp-app.html",
     "build": "bun run format && bun run build:app && bun run build:mcp",
     "dev": "bun run typecheck && bun run build && bun --watch src/server.ts",
     "fetch": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Get-SMPTEDocs.ps1",

@@ -13,8 +13,8 @@ playwright-report/
 *.sqlite3
 *.db
 
-src/app.js
-src/htmx.js
+src/library/client/app.js
+src/library/client/htmx.js
 
 *.zip
 *.pdf

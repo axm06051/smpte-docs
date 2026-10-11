@@ -3,7 +3,7 @@ node_modules/
 *.log
 
 dist/
-src/app.js
+src/library/client/app.js
 .data
 
 .tools/
