@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 const html = readFileSync('src/index.html', 'utf8');
 const server = readFileSync('src/server.ts', 'utf8');
 const app = readFileSync('src/app.ts', 'utf8');
+const shared = readFileSync('src/shared.ts', 'utf8'); // markup shared by server and page
 
 test('responsive search keeps the normal query path local', () => {
   expect(html).not.toContain('hx-get="/search"');
@@ -30,7 +31,8 @@ test('lazy version loading is delegated, prepared-response backed, and swapped b
 });
 
 test('autocomplete preview is rendered locally from the page data', () => {
-  expect(app).toContain('function previewHtml(d: SearchDoc)');
+  expect(shared).toContain('export function previewHtml(d: SearchDoc');
+  expect(app).toContain('previewHtml(d, docs)');
   expect(app).toContain("acList.addEventListener('mouseover'");
   expect(app).toContain("acList.addEventListener('focusin'");
   expect(server).not.toContain('/autocomplete');
@@ -55,15 +57,15 @@ test('HTMX PDF text search preserves master snippets in matching rows', () => {
 test('HTMX restores the master detail pane through a server fragment', () => {
   expect(html).toContain('id="detail"');
   expect(server).toContain("u.pathname.startsWith('/detail/')");
-  expect(server).toContain('autocompletePreview');
+  expect(server).toContain('previewHtml(d, docs)');
   expect(server).toContain('highlightSnippet');
 });
 
 test('HTMX tree rows retain stable selection and keyboard navigation hooks', () => {
-  expect(server).toContain('data-slug="${esc(d.slug)}"');
-  expect(server).toContain('data-preview="/detail/${esc(d.slug)}"');
+  expect(shared).toContain('data-slug="${esc(d.slug)}"');
+  expect(shared).toContain('data-preview="/detail/${esc(d.slug)}"');
   expect(app).toContain('function loadDetail(row: HTMLElement)');
-  expect(server).toContain('tabindex="-1"');
+  expect(shared).toContain('tabindex="-1"');
   expect(app).toContain("case 'ArrowDown'");
   expect(app).toContain("case 'ArrowUp'");
   expect(app).toContain("case 'PageDown'");
@@ -93,7 +95,8 @@ test('tree preview and theme colors survive local rendering', () => {
   const app = readFileSync('src/app.ts', 'utf8');
   const css = readFileSync('src/style.css', 'utf8');
 
-  expect(app).toContain('data-preview="/detail/${esc(d.slug)}"');
+  expect(app).toContain('treeRow(');
+  expect(shared).toContain('data-preview="/detail/${esc(d.slug)}"');
   expect(app).toContain("details.dataset.hydrated !== '1'");
   expect(app).toContain('renderChildren(children, parent)');
   expect(css).toContain('--selected:');

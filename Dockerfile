@@ -8,7 +8,7 @@ COPY scripts/Get-SMPTEDocs.ps1 ./scripts/Get-SMPTEDocs.ps1
 COPY package.json .data* /seed/
 
 # Force a refresh: docker build --build-arg FORCE=1 .
-ARG FORCE=
+ARG FORCE=0
 RUN --mount=type=cache,target=/cache/smpte \
     mkdir -p /cache/smpte && rm -f /seed/package.json && cp -an /seed/. /cache/smpte/ \
     && pwsh -NoProfile -File scripts/Get-SMPTEDocs.ps1 -DataDir /cache/smpte -OutDir /cache/smpte/lib ${FORCE:+-Force} \
@@ -49,6 +49,7 @@ ENV NODE_ENV=production \
 COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile --production
 
+COPY public ./public
 COPY --from=build /app/src ./src
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/.data/searchindex.sqlite /app/.data/versions.json /app/.data/pdf-urls.json ./.data/

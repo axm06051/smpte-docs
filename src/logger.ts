@@ -23,6 +23,9 @@ if (logFile) {
   } catch {}
 }
 
+// Milliseconds since `started` (a performance.now() value), for the `ms` field of log lines.
+export const since = (started: number) => +(performance.now() - started).toFixed(2);
+
 const flat = (s: string) => s.replace(/\n\s*/g, ' ');
 
 export const logger = Object.fromEntries(

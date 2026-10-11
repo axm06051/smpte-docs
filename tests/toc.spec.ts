@@ -32,3 +32,10 @@ test('firstBodyMatch skips embedded base64 blobs', () => {
     firstBodyMatch(blob + ' ' + filler + body.replace('traffic shaping', 'ptp'), /ptp/i),
   ).toBeGreaterThan(blob.length);
 });
+
+test('a one-character pattern over a long TOC does not re-test every overlapping window', () => {
+  const toc = '1.2 '.repeat(5000);
+  let skipped = 0;
+  expect(firstBodyMatch(toc, /\d/, () => skipped++)).toBe(-1);
+  expect(skipped).toBeLessThan(toc.length / 100);
+});

@@ -1,5 +1,5 @@
 {
-  "version": "0.3.4",
+  "version": "0.3.5",
   "private": true,
   "scripts": {
     "build:app": "bun build src/app.ts --outfile src/app.js --target browser --minify",
@@ -20,10 +20,9 @@
     "prettier": "^3.9.9"
   },
   "dependencies": {
-    "htmx.org": "2.0.10",
     "@modelcontextprotocol/ext-apps": "^2.0.0",
     "@modelcontextprotocol/server": "^2.0.0",
-    "fixi-js": "^0.9.4",
+    "htmx.org": "2.0.10",
     "zod": "^4.2.0"
   }
 }

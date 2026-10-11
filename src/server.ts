@@ -1,39 +1,28 @@
-import { Database } from 'bun:sqlite';
+import { existsSync, readdirSync } from 'node:fs';
 import { brotliCompressSync, constants as zlib } from 'node:zlib';
+import { db, DB_PATH, rowIds } from './db';
 import { mcp } from './mcp';
 import RAW from './catalog';
-import { logger } from './logger';
+import { logger, since } from './logger';
+import {
+  BASE,
+  cnt,
+  docUrl,
+  escRe,
+  esc,
+  highlight,
+  mark,
+  previewHtml,
+  rowHtml,
+  tokens,
+  treeRow,
+  type SearchDoc,
+} from './shared';
 import { firstBodyMatch, NOISE_CONFIG } from './toc';
 
 type Version = string | { k?: string; s?: string };
-type Doc = {
-  id: number;
-  slug: string;
-  title: string;
-  name: string;
-  parentSlug: string | null;
-  cat: string;
-  designator: string;
-  nums: number[];
-  children: Doc[];
-  parent: Doc | null;
-};
-
 type PdfUrls = Record<string, string>;
 type Versions = Record<string, Version[]>;
-
-const DB_PATH = '.data/searchindex.sqlite';
-const db = (() => {
-  try {
-    return new Database(DB_PATH, { readonly: true });
-  } catch (error) {
-    logger.fatal('search index cannot be opened; build it with `bun run index`', {
-      path: DB_PATH,
-      error,
-    });
-    throw error;
-  }
-})();
 
 async function loadJson<T>(path: string, fallback: T): Promise<T> {
   try {
@@ -58,11 +47,12 @@ for (const [path, url] of Object.entries(pdfUrls)) {
     path.match(/^\/doc\/([^/]+)\/.*\.pdf$/i) || path.match(/^\/latest\/([^/]+)\/.*\.pdf$/i);
   if (match && !pdfBySlug.has(match[1])) pdfBySlug.set(match[1], url);
 }
-const BASE = 'https://pub.smpte.org';
 const HOST = process.env.HOST ?? 'localhost';
 const PORT = Number(process.env.PORT ?? 3000);
 
-const docs: Doc[] = RAW.map(([slug, title, parentSlug], id) => {
+// One doc shape for the whole app: it is exactly what the page receives as JSON, and what the
+// shared render functions take, so server and client markup cannot drift apart.
+const docs: SearchDoc[] = RAW.map(([slug, title], id) => {
   const designator = title.split(',')[0].trim();
   const m = /^(OV|RP|EG|RDD|ST)?\s*([0-9]+(?:\.[0-9]+)?(?:-[0-9]+)?)/.exec(title);
   return {
@@ -70,23 +60,20 @@ const docs: Doc[] = RAW.map(([slug, title, parentSlug], id) => {
     slug,
     title,
     name: title.slice(designator.length).replace(/^\s*,\s*/, '') || title,
-    parentSlug: parentSlug ?? null,
-    cat: m?.[1] || '',
     designator,
-    nums: (designator.match(/\d+/g) || []).map(Number),
+    cat: m?.[1] || '',
+    parent: -1,
     children: [],
-    parent: null,
+    versions: versions[slug]?.length || 0,
   };
 });
 
 const bySlug = new Map(docs.map((d) => [d.slug, d]));
 const allDocIds = new Set(docs.map((d) => d.id));
-const autocompleteText = new Map(
-  docs.map((d) => [d.id, `${d.designator} ${d.title} ${d.slug}`.toLowerCase()]),
-);
+const autocompleteText = docs.map((d) => `${d.designator} ${d.title} ${d.slug}`.toLowerCase());
 const searchIndex = new Map<string, number[]>();
 for (const d of docs) {
-  for (const word of new Set(tokens(autocompleteText.get(d.id)!))) {
+  for (const word of new Set(tokens(autocompleteText[d.id]))) {
     const ids = searchIndex.get(word);
     if (ids) ids.push(d.id);
     else searchIndex.set(word, [d.id]);
@@ -94,59 +81,39 @@ for (const d of docs) {
 }
 function indexedIds(q: string) {
   const words = tokens(q);
-  if (!words.length) return [] as number[];
-  let ids = searchIndex.get(words[0]) || [];
-  if (!ids.length) {
-    const needle = words[0];
-    ids = docs.filter((d) => autocompleteText.get(d.id)!.includes(needle)).map((d) => d.id);
-  } else {
-    ids = ids.filter((id) => autocompleteText.get(id)!.includes(words[0]));
-  }
-  for (let i = 1; i < words.length && ids.length; i++) {
-    const needle = words[i];
-    ids = ids.filter((id) => autocompleteText.get(id)!.includes(needle));
-  }
+  if (!words.length) return [];
+  // A whole-word hit list is already known to contain the word; otherwise scan for a substring.
+  let ids =
+    searchIndex.get(words[0]) ??
+    docs.filter((d) => autocompleteText[d.id].includes(words[0])).map((d) => d.id);
+  for (let i = 1; i < words.length && ids.length; i++)
+    ids = ids.filter((id) => autocompleteText[id].includes(words[i]));
   return ids;
 }
-for (const d of docs) {
-  const parent = d.parentSlug ? bySlug.get(d.parentSlug) : undefined;
-  if (parent && parent !== d) {
-    d.parent = parent;
-    parent.children.push(d);
+RAW.forEach(([, , parentSlug], id) => {
+  const parent = parentSlug ? bySlug.get(parentSlug) : undefined;
+  if (parent && parent.id !== id) {
+    docs[id].parent = parent.id;
+    parent.children.push(id);
   }
-}
+});
 
-const cmp = (a: Doc, b: Doc) => {
-  const n = Math.max(a.nums.length, b.nums.length);
-  for (let i = 0; i < n; i++)
-    if (a.nums[i] !== b.nums[i]) return (a.nums[i] ?? -1) - (b.nums[i] ?? -1);
+const nums = docs.map((d) => (d.designator.match(/\d+/g) || []).map(Number));
+const cmp = (a: SearchDoc, b: SearchDoc) => {
+  const x = nums[a.id],
+    y = nums[b.id];
+  const n = Math.max(x.length, y.length);
+  for (let i = 0; i < n; i++) if (x[i] !== y[i]) return (x[i] ?? -1) - (y[i] ?? -1);
   return a.slug.localeCompare(b.slug);
 };
-const roots = docs.filter((d) => !d.parent).sort(cmp);
-for (const d of docs) d.children.sort(cmp);
+const roots = docs.filter((d) => d.parent < 0).sort(cmp);
+for (const d of docs) d.children.sort((a, b) => cmp(docs[a], docs[b]));
 
-const searchData = JSON.stringify(
-  docs.map((d) => ({
-    id: d.id,
-    slug: d.slug,
-    title: d.title,
-    name: d.name,
-    designator: d.designator,
-    cat: d.cat,
-    parent: d.parent?.id ?? -1,
-    children: d.children.map((c) => c.id),
-    versions: versions[d.slug]?.length || 0,
-  })),
-).replaceAll('<', '\\u003c');
+const searchData = JSON.stringify(docs).replaceAll('<', '\\u003c');
 
-const esc = (s: unknown) =>
-  String(s ?? '').replace(
-    /[&<>"']/g,
-    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!,
-  );
-const pdfUrl = (d: Doc) => pdfBySlug.get(d.slug) || `${BASE}/doc/${d.slug}/`;
+const pdfUrl = (d: SearchDoc) => pdfBySlug.get(d.slug) || `${BASE}/doc/${d.slug}/`;
 
-function versionRows(d: Doc) {
+function versionRows(d: SearchDoc) {
   return (versions[d.slug] || [])
     .map((v) => {
       const key = typeof v === 'string' ? v : v.k || '';
@@ -160,25 +127,12 @@ function versionRows(d: Doc) {
     .join('');
 }
 
-const counts = new Map<number, number>();
-function count(d: Doc): number {
-  const cached = counts.get(d.id);
-  if (cached !== undefined) return cached;
-  const value = d.children.reduce((n, c) => n + 1 + count(c), 0);
-  counts.set(d.id, value);
-  return value;
-}
-function row(d: Doc, level = 0): string {
-  const pad = 12 + level * 22;
-  const attrs = `role="treeitem" aria-level="${level + 1}" tabindex="-1" data-slug="${esc(d.slug)}" data-preview="/detail/${esc(d.slug)}" style="padding-left:${pad}px"`;
-  if (d.children.length)
-    return `<li class="row suite" ${attrs}><details><summary><span class="tg-sp"></span><span class="slug">${esc(d.designator)}</span><span class="title"><span class="cat suite">${esc(d.cat || 'SUITE')}</span><a href="${BASE}/doc/${esc(d.slug)}/" target="_blank" rel="noopener">${esc(d.name)}</a><span class="cnt">${count(d)} part${count(d) === 1 ? '' : 's'}</span></span></summary><ul class="list" role="group">${d.children.map((c) => row(c, level + 1)).join('')}</ul></details></li>`;
-  const n = versions[d.slug]?.length;
-  return `<li class="row" ${attrs}><details><summary><span class="tg-sp"></span><span class="slug">${esc(d.designator)}</span><span class="title"><span class="cat">${esc(d.cat)}</span><a href="${esc(pdfUrl(d))}" target="_blank" rel="noopener">${esc(d.name)}</a>${n ? `<span class="cnt">${n} version${n === 1 ? '' : 's'}</span>` : ''}</span></summary><ul class="versions"></ul></details></li>`;
-}
+const counts: number[] = [];
+const count = (d: SearchDoc): number =>
+  (counts[d.id] ??= d.children.reduce((n, id) => n + 1 + count(docs[id]), 0));
 
-function detailPreview(d: Doc, q = '', re = false, full = false) {
-  let body = autocompletePreview(d);
+function detailPreview(d: SearchDoc, q = '', re = false, full = false) {
+  let body = previewHtml(d, docs);
   if (full && q) {
     const snippet = docSnippet(d, q, re);
     if (snippet) body += `<div class="pv-meta">…${highlightSnippet(snippet, q, re)}…</div>`;
@@ -186,52 +140,6 @@ function detailPreview(d: Doc, q = '', re = false, full = false) {
   return body;
 }
 
-function autocompletePreview(d: Doc) {
-  const crumbs: string[] = [];
-  for (let p: Doc | null = d.parent; p; p = p.parent) crumbs.unshift(p.designator);
-  let body = `<div class="pv-top"><span class="cat">${esc(d.cat)}</span><span class="pv-des">${esc(d.designator)}</span></div>`;
-  body += `<div class="pv-title">${esc(d.name)}</div>`;
-  if (crumbs.length) body += `<div class="pv-meta">Suite: <b>${esc(crumbs.join(' › '))}</b></div>`;
-  if (d.parent) {
-    const part = d.parent.children.indexOf(d) + 1;
-    body += `<div class="pv-meta">Part ${part} of ${d.parent.children.length} in ${esc(d.parent.designator)}</div>`;
-  }
-  if (d.children.length) {
-    const first = d.children
-      .slice(0, 5)
-      .map((c) => esc(c.designator))
-      .join(', ');
-    body += `<div class="pv-meta"><b>${d.children.length}</b> part${d.children.length === 1 ? '' : 's'}: ${first}${d.children.length > 5 ? ` &hellip; +${d.children.length - 5} more` : ''}</div>`;
-  }
-  const dated = versions[d.slug]?.length || 0;
-  if (dated)
-    body += `<div class="pv-meta"><b>${dated}</b> dated version${dated === 1 ? '' : 's'}</div>`;
-  body += `<div class="pv-meta"><a href="${esc(`${BASE}/doc/${d.slug}/`)}" target="_blank" rel="noopener">Open document page &#8599;</a></div>`;
-  return body;
-}
-
-function tokens(q: string) {
-  return q
-    .toLowerCase()
-    .replace(/[^a-z0-9\-\s]/g, ' ')
-    .split(/\s+/)
-    .filter(Boolean);
-}
-function highlight(s: string, pieces: string[]) {
-  if (!pieces.length) return esc(s);
-  const re = new RegExp(
-    `\\b(${pieces.map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`,
-    'gi',
-  );
-  let out = '';
-  let last = 0;
-  for (const m of s.matchAll(re)) {
-    const index = m.index ?? 0;
-    out += esc(s.slice(last, index)) + `<mark>${esc(m[0])}</mark>`;
-    last = index + m[0].length;
-  }
-  return out + esc(s.slice(last));
-}
 const fullSlugs = new Map<string, string[]>();
 const allFullSlugs = docs.map((d) => d.slug);
 for (const d of docs) {
@@ -239,43 +147,32 @@ for (const d of docs) {
   if (slugs) slugs.push(d.slug);
   else fullSlugs.set(d.cat, [d.slug]);
 }
-const fullQueries = new Map<string, string>();
-for (const [cat, slugs] of fullSlugs)
-  fullQueries.set(cat, `slug IN (${slugs.map(() => '?').join(',')})`);
-const fullQueryAll = `slug IN (${allFullSlugs.map(() => '?').join(',')})`;
+const inList = (slugs: string[]) => `slug IN (${slugs.map(() => '?').join(',')})`;
+const fullQueries = new Map([...fullSlugs].map(([cat, slugs]) => [cat, inList(slugs)]));
+const fullQueryAll = inList(allFullSlugs);
+// FTS5 prefix query: every word must match.
+const ftsAnd = (q: string) =>
+  tokens(q)
+    .map((w) => `"${w.replaceAll('"', '""')}"*`)
+    .join(' AND ');
+type TextRow = { slug: string; text: string };
 
 function fullRows(q: string, cat: string, re: boolean) {
   const slugs = cat ? fullSlugs.get(cat) || [] : allFullSlugs;
   const where = cat ? fullQueries.get(cat) || '0' : fullQueryAll;
-  if (re)
-    return db.query(`SELECT slug, text FROM docs WHERE ${where}`).all(...slugs) as {
-      slug: string;
-      text: string;
-    }[];
-  const words = tokens(q);
-  if (!words.length) return [];
-  const match = words.map((w) => `"${w.replaceAll('"', '""')}"*`).join(' AND ');
+  if (re) return db.query(`SELECT slug, text FROM docs WHERE ${where}`).all(...slugs) as TextRow[];
+  const match = ftsAnd(q);
+  if (!match) return [];
   return db
     .query(`SELECT slug, text FROM docs WHERE docs MATCH ? AND ${where}`)
-    .all(match, ...slugs) as {
-    slug: string;
-    text: string;
-  }[];
+    .all(match, ...slugs) as TextRow[];
 }
 
-// slug is UNINDEXED in the FTS table, so WHERE slug = ? scans (~18 ms). Slugs are unique, so
-// resolve slug -> rowid once and use rowid lookups (~0.1-0.4 ms) for single-doc snippets.
-const rowidBySlug = new Map<string, number>(
-  (db.query('SELECT rowid, slug FROM docs').all() as { rowid: number; slug: string }[]).map((r) => [
-    r.slug,
-    r.rowid,
-  ]),
-);
 const snippetRegex = (q: string, re: boolean) => {
   try {
     const words = re ? [q] : tokens(q);
     if (!words.length) return null;
-    return new RegExp(words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'i');
+    return new RegExp(words.map(escRe).join('|'), 'i');
   } catch (error) {
     logger.warning('PDF-text snippet pattern is invalid', { query: q, regex: re, error });
     return null;
@@ -288,25 +185,21 @@ const bodyMatch = (slug: string, text: string, rx: RegExp) =>
   firstBodyMatch(text, rx, (reason, at) =>
     logger.trace('PDF-text match skipped as noise', { slug, reason, at }),
   );
+const around = (text: string, index: number) => text.slice(Math.max(0, index - 80), index + 200);
 const snippetAt = (slug: string, text: string, rx: RegExp) => {
   const index = bodyMatch(slug, text, rx);
   if (index < 0) logger.debug('no body match for snippet', { slug, textLength: text.length });
-  return index >= 0 ? text.slice(Math.max(0, index - 80), index + 200) : undefined;
+  return index >= 0 ? around(text, index) : undefined;
 };
 // Constant-time snippet for ONE doc (used by /detail); same text/offsets as fullSnippets().
-function docSnippet(d: Doc, q: string, re: boolean) {
-  const rowid = rowidBySlug.get(d.slug);
+function docSnippet(d: SearchDoc, q: string, re: boolean) {
+  const rowid = rowIds.get(d.slug);
   const rx = snippetRegex(q, re);
   if (rowid === undefined || !rx) return undefined;
   try {
     const row = re
       ? db.query('SELECT text FROM docs WHERE rowid = ?').get(rowid)
-      : db.query('SELECT text FROM docs WHERE docs MATCH ? AND rowid = ?').get(
-          tokens(q)
-            .map((w) => `\"${w.replaceAll('\"', '\"\"')}\"*`)
-            .join(' AND '),
-          rowid,
-        );
+      : db.query('SELECT text FROM docs WHERE docs MATCH ? AND rowid = ?').get(ftsAnd(q), rowid);
     return row ? snippetAt(d.slug, (row as { text: string }).text, rx) : undefined;
   } catch (error) {
     // A broken snippet must not turn the whole preview into a 500.
@@ -318,33 +211,26 @@ function docSnippet(d: Doc, q: string, re: boolean) {
 function fullSnippets(q: string, cat: string, re: boolean) {
   const started = performance.now();
   const snippets = new Map<string, string>();
-  let rx: RegExp;
-  try {
-    const words = re ? [q] : tokens(q);
-    if (!words.length) return snippets;
-    rx = new RegExp(words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'i');
-  } catch (error) {
-    logger.warning('PDF-text search pattern is invalid', { query: q, regex: re, error });
-    return snippets;
-  }
+  const rx = snippetRegex(q, re);
+  if (!rx) return snippets;
   const rows = fullRows(q, cat, re);
   for (const r of rows) {
     const index = bodyMatch(r.slug, r.text, rx);
-    if (index >= 0) snippets.set(r.slug, r.text.slice(Math.max(0, index - 80), index + 200));
+    if (index >= 0) snippets.set(r.slug, around(r.text, index));
   }
   const noiseOnly = rows.length - snippets.size;
   logger.debug('PDF-text snippets extracted', {
-    queryLength: q.length,
+    query: q,
     category: cat || undefined,
     regex: re,
     scanned: rows.length,
     withBodyMatch: snippets.size,
     noiseOnly,
-    ms: +(performance.now() - started).toFixed(2),
+    ms: since(started),
   });
   if (rows.length > 0 && snippets.size === 0)
     logger.warning('every PDF-text match was a table of contents or embedded data', {
-      queryLength: q.length,
+      query: q,
       scanned: rows.length,
     });
   return snippets;
@@ -352,18 +238,10 @@ function fullSnippets(q: string, cat: string, re: boolean) {
 function highlightSnippet(s: string, q: string, re: boolean) {
   if (re) {
     try {
-      const rx = new RegExp(q, 'gi');
-      let out = '';
-      let last = 0;
-      for (const m of s.matchAll(rx)) {
-        const index = m.index ?? 0;
-        out += esc(s.slice(last, index)) + `<mark>${esc(m[0])}</mark>`;
-        last = index + m[0].length;
-      }
-      return out + esc(s.slice(last));
+      return mark(s, new RegExp(q, 'gi'));
     } catch {}
   }
-  return highlight(s, tokens(q));
+  return highlight(s, tokens(q), true);
 }
 
 function search(q: string, cat: string, re: boolean, full: boolean, fullMatchSlugs?: Set<string>) {
@@ -387,33 +265,40 @@ function search(q: string, cat: string, re: boolean, full: boolean, fullMatchSlu
   }
   if (cat) match = match.filter((d) => d.cat === cat);
   const ids = new Set<number>();
-  for (const d of match) for (let n: Doc | null = d; n; n = n.parent) ids.add(n.id);
+  for (const d of match)
+    for (let n: SearchDoc | undefined = d; n; n = docs[n.parent]) ids.add(n.id);
   return ids;
 }
 
+// A row of a /search result: unlike the lazily hydrated rows (shared.ts treeRow) the whole subtree is
+// rendered, suites are open, leaves link straight to their PDF, and a PDF-text hit adds its snippet.
 function rowFiltered(
-  d: Doc,
+  d: SearchDoc,
   level: number,
   ids: Set<number>,
-  snippets = new Map<string, string>(),
-  q = '',
-  re = false,
+  snippets: Map<string, string>,
+  q: string,
+  re: boolean,
 ): string {
-  if (!d.children.length) {
-    const body = row(d, level);
-    const snippet = snippets.get(d.slug);
-    if (!snippet) return body;
-    return body.replace(
-      '</li>',
-      `<div class="sn">…${highlightSnippet(snippet, q, re)}…</div></li>`,
-    );
-  }
-  const open = ids.has(d.id);
-  const children = d.children
-    .filter((c) => ids.has(c.id))
-    .map((c) => rowFiltered(c, level + 1, ids, snippets, q, re))
-    .join('');
-  return `<li class="row suite" role="treeitem" aria-level="${level + 1}" tabindex="-1" data-slug="${esc(d.slug)}" data-preview="/detail/${esc(d.slug)}" style="padding-left:${12 + level * 22}px"><details${open ? ' open' : ''}><summary><span class="tg-sp"></span><span class="slug">${esc(d.designator)}</span><span class="title"><span class="cat suite">${esc(d.cat || 'SUITE')}</span><a href="${BASE}/doc/${esc(d.slug)}/" target="_blank" rel="noopener">${esc(d.name)}</a><span class="cnt">${count(d)} parts</span></span></summary><ul class="list" role="group">${children}</ul></details></li>`;
+  const suite = d.children.length > 0;
+  const snippet = suite ? undefined : snippets.get(d.slug);
+  return rowHtml(d, level, {
+    open: suite,
+    href: suite ? docUrl(d.slug) : pdfUrl(d),
+    name: esc(d.name),
+    tail: suite
+      ? `<span class="cnt">${count(d)} parts</span>`
+      : d.versions
+        ? cnt(d.versions, 'version')
+        : '',
+    kids: suite
+      ? `<ul class="list" role="group">${d.children
+          .filter((id) => ids.has(id))
+          .map((id) => rowFiltered(docs[id], level + 1, ids, snippets, q, re))
+          .join('')}</ul>`
+      : '<ul class="versions"></ul>',
+    extra: snippet && `<div class="sn">…${highlightSnippet(snippet, q, re)}…</div>`,
+  });
 }
 function tree(q = '', cat = '', re = false, full = false) {
   const snippets = full && q ? fullSnippets(q, cat, re) : new Map<string, string>();
@@ -422,27 +307,14 @@ function tree(q = '', cat = '', re = false, full = false) {
 }
 
 // First paint must not wait for JavaScript, but rendering every root row would add ~30 KB (gzip) to
-// every load.  So the first screenful is rendered here, byte-for-byte what app.ts's row() produces
-// for the same data (tests/prefetch.spec.ts asserts it), and app.ts renders the full tree after
+// every load.  So the first screenful is rendered here with the very function app.js uses
+// (tests/prefetch.spec.ts asserts the markup is identical), and app.js renders the full tree after
 // parsing, replacing identical markup, so nothing shifts.
-function initialRow(d: Doc): string {
-  const suite = d.children.length > 0;
-  const n = d.children.length;
-  const v = versions[d.slug]?.length || 0;
-  const tail = suite
-    ? `<span class="cnt">${n} part${n === 1 ? '' : 's'}</span>`
-    : v
-      ? `<span class="cnt">${v} version${v === 1 ? '' : 's'}</span>`
-      : '';
-  const cat = `<span class="cat${suite ? ' suite' : ''}">${esc(d.cat || (suite ? 'SUITE' : ''))}</span>`;
-  const href = `${BASE}/doc/${encodeURIComponent(d.slug)}/`;
-  const children = suite
-    ? `<ul class="list" role="group" data-children-for="${esc(d.slug)}"></ul>`
-    : '<ul class="versions"></ul>';
-  return `<li class="row${suite ? ' suite' : ''}" role="treeitem" aria-level="1" tabindex="-1" data-slug="${esc(d.slug)}" data-id="${d.id}" data-preview="/detail/${esc(d.slug)}" style="padding-left:12px"><details><summary><span class="tg-sp"></span><span class="slug">${esc(d.designator)}</span><span class="title">${cat}<a href="${esc(href)}" target="_blank" rel="noopener">${esc(d.name)}</a>${tail}</span></summary>${children}</details></li>`;
-}
 const SSR_ROWS = 30;
-const initialTree = roots.slice(0, SSR_ROWS).map(initialRow).join('');
+const initialTree = roots
+  .slice(0, SSR_ROWS)
+  .map((d) => treeRow(d, 0))
+  .join('');
 
 // ---- Compression + validators ------------------------------------------------------------------
 // Everything that is compressed more than once is compressed once, at startup or first use.
@@ -541,7 +413,7 @@ logger.info('server initialized', {
   docs: docs.length,
   roots: roots.length,
   indexedTerms: searchIndex.size,
-  database: '.data/searchindex.sqlite',
+  database: DB_PATH,
   versions: Object.keys(versions).length,
   pdfUrls: Object.keys(pdfUrls).length,
   port: PORT,
@@ -569,11 +441,11 @@ async function currentPage() {
         logger.info('page rebuild completed', {
           assets: page.assets.size,
           htmlBytes: page.html.raw.length,
-          ms: +(performance.now() - started).toFixed(2),
+          ms: since(started),
         });
       } catch (error) {
         logger.error('page rebuild failed', {
-          ms: +(performance.now() - started).toFixed(2),
+          ms: since(started),
           error,
         });
         throw error;
@@ -658,7 +530,7 @@ function packed(key: string, make: () => string): Packed {
     entries: packedCache.size,
     cacheBytes,
     evicted,
-    ms: +(performance.now() - started).toFixed(2),
+    ms: since(started),
   });
 
   return p;
@@ -682,6 +554,9 @@ async function staticAsset(req: Request, name: string, path: string, cc: string,
   return serveBlob(req, a, cc);
 }
 
+const FAVICON_DIR = './public/favicon/';
+const FAVICONS = new Set(existsSync(FAVICON_DIR) ? readdirSync(FAVICON_DIR) : []);
+
 Bun.serve({
   port: PORT,
 
@@ -698,7 +573,7 @@ Bun.serve({
 
     try {
       const response = await handleRequest(req, u);
-      const ms = +(performance.now() - started).toFixed(2);
+      const ms = since(started);
 
       const context = {
         method: req.method,
@@ -720,7 +595,7 @@ Bun.serve({
       logger.error('HTTP request failed with exception', {
         method: req.method,
         path,
-        ms: +(performance.now() - started).toFixed(2),
+        ms: since(started),
         error,
       });
 
@@ -774,7 +649,7 @@ async function handleRequest(req: Request, u: URL): Promise<Response> {
     const full = u.searchParams.get('full') === '1';
 
     logger.debug('search request', {
-      queryLength: q.length,
+      query: q,
       category: cat || undefined,
       regex: re,
       fullText: full,
@@ -790,7 +665,7 @@ async function handleRequest(req: Request, u: URL): Promise<Response> {
         gzip: Boolean(result.gz),
         brotli: Boolean(result.br),
       },
-      ms: +(performance.now() - started).toFixed(2),
+      ms: since(started),
     });
 
     return htmlResponse(req, result, SHORT);
@@ -802,6 +677,9 @@ async function handleRequest(req: Request, u: URL): Promise<Response> {
     const d = bySlug.get(slug);
     return d ? html(req, versionRows(d), SHORT) : notFound();
   }
+  // public/favicon/* is served from the site root (the web manifest links /web-app-manifest-*.png).
+  if (FAVICONS.has(u.pathname.slice(1)))
+    return staticAsset(req, u.pathname, FAVICON_DIR + u.pathname.slice(1), 'public, max-age=86400');
   if (u.pathname === '/htmx.js')
     return staticAsset(req, u.pathname, HTMX_FILE, 'public, max-age=3600', `${HTMX_FILE}.gz`);
   if (u.pathname === '/' || u.pathname === '/index.html')

@@ -6,7 +6,6 @@
       "dependencies": {
         "@modelcontextprotocol/ext-apps": "^2.0.0",
         "@modelcontextprotocol/server": "^2.0.0",
-        "fixi-js": "^0.9.4",
         "htmx.org": "2.0.10",
         "zod": "^4.2.0",
       },
@@ -41,8 +40,6 @@
     "eventsource": ["eventsource@3.0.7", "", { "dependencies": { "eventsource-parser": "^3.0.1" } }, "sha512-CRT1WTyuQoD771GW56XEZFQ/ZoSfWid1alKGDYMmkt2yl8UXrVR4pspqWNEcqKvVIzg6PAltWjxcSSPrboA4iA=="],
 
     "eventsource-parser": ["eventsource-parser@3.1.1", "", {}, "sha512-EKN1vKAMcZ8MlYMpaNuxN6R9yakzH6uajHcHVTqWJzvu5pWw9DyhbP35HH8MVBQ+dZjAfDxk+A8NiR9KWaXiyQ=="],
-
-    "fixi-js": ["fixi-js@0.9.4", "", {}, "sha512-ruUKWlM+t6k7YvoVO67z/1jMw04Q6rJCEBeZJPeFzt7U/pXz3S4bp+qxll+nwpOPN/f+pyTdLU70Ic5G+gyk1A=="],
 
     "htmx.org": ["htmx.org@2.0.10", "", {}, "sha512-kdeJe7ZVwaS6QMz/ebBIVtZdpwen6L0OQ5GOhPV9MKBb196TCZeZu4yA7ZIQsaLKv7EpXz+So7KSXNuHXhj7Cw=="],
 

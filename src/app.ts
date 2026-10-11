@@ -1,17 +1,7 @@
-type SearchDoc = {
-  id: number;
-  slug: string;
-  title: string;
-  name: string;
-  designator: string;
-  cat: string;
-  parent: number;
-  children: number[];
-  versions: number;
-};
+import { esc, highlight, previewHtml, treeRow, type SearchDoc } from './shared';
 
+// ids are array indexes, so docs[id] is the document and docs[-1] (no parent) is undefined.
 const docs = JSON.parse(document.getElementById('search-data')!.textContent!) as SearchDoc[];
-const byId = new Map(docs.map((d) => [d.id, d]));
 const roots = docs.filter((d) => d.parent < 0);
 const query = document.getElementById('q') as HTMLInputElement;
 const form = query.closest('form') as HTMLFormElement;
@@ -26,45 +16,16 @@ const ac = document.getElementById('ac') as HTMLElement;
 const acList = document.getElementById('acList') as HTMLUListElement;
 const acPrev = document.getElementById('acPrev') as HTMLElement;
 
-const esc = (s: string) =>
-  s.replace(
-    /[&<>"']/g,
-    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!,
-  );
-const pdf = (d: SearchDoc) => `https://pub.smpte.org/doc/${encodeURIComponent(d.slug)}/`;
-const norm = (s: string) => s.toLowerCase();
 const bySlug = new Map(docs.map((d) => [d.slug, d]));
-const BASE = 'https://pub.smpte.org';
 
-// Same markup the server's /detail/<slug> fragment produces, built from data the page already has,
-// so hovering a suggestion costs no request.
-function previewHtml(d: SearchDoc) {
-  const parentOf = (x: SearchDoc) => (x.parent >= 0 ? byId.get(x.parent) : undefined);
-  const crumbs: string[] = [];
-  for (let p = parentOf(d); p; p = parentOf(p)) crumbs.unshift(p.designator);
-  let body = `<div class="pv-top"><span class="cat">${esc(d.cat)}</span><span class="pv-des">${esc(d.designator)}</span></div><div class="pv-title">${esc(d.name)}</div>`;
-  if (crumbs.length) body += `<div class="pv-meta">Suite: <b>${esc(crumbs.join(' › '))}</b></div>`;
-  const parent = parentOf(d);
-  if (parent)
-    body += `<div class="pv-meta">Part ${parent.children.indexOf(d.id) + 1} of ${parent.children.length} in ${esc(parent.designator)}</div>`;
-  const n = d.children.length;
-  if (n) {
-    const first = d.children
-      .slice(0, 5)
-      .map((id) => esc(byId.get(id)!.designator))
-      .join(', ');
-    body += `<div class="pv-meta"><b>${n}</b> part${n === 1 ? '' : 's'}: ${first}${n > 5 ? ` &hellip; +${n - 5} more` : ''}</div>`;
-  }
-  if (d.versions)
-    body += `<div class="pv-meta"><b>${d.versions}</b> dated version${d.versions === 1 ? '' : 's'}</div>`;
-  return `${body}<div class="pv-meta"><a href="${BASE}/doc/${esc(d.slug)}/" target="_blank" rel="noopener">Open document page &#8599;</a></div>`;
-}
+// previewHtml (shared.ts) is the markup the server's /detail/<slug> fragment produces too, built here
+// from data the page already has, so hovering a suggestion costs no request.
 let shownPreview = '';
 function showPreview(slug: string | undefined) {
   if (slug === shownPreview) return;
   shownPreview = slug || '';
   const d = slug ? bySlug.get(slug) : undefined;
-  acPrev.innerHTML = d ? previewHtml(d) : '';
+  acPrev.innerHTML = d ? previewHtml(d, docs) : '';
 }
 acList.addEventListener('mouseover', (e) =>
   showPreview((e.target as HTMLElement).closest<HTMLElement>('.ac-item')?.dataset.slug),
@@ -92,44 +53,20 @@ function setAcActive(i: number) {
   el.scrollIntoView({ block: 'nearest' });
   showPreview(el.dataset.slug);
 }
-const searchable = docs.map((d) => norm(`${d.designator} ${d.name} ${d.slug}`));
-
-function highlight(text: string, words: string[]) {
-  if (!words.length) return esc(text);
-  const re = new RegExp(
-    `(${words.map((w) => w.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')).join('|')})`,
-    'gi',
-  );
-  let out = '',
-    last = 0;
-  for (const m of text.matchAll(re)) {
-    const i = m.index ?? 0;
-    out += esc(text.slice(last, i)) + `<mark>${esc(m[0])}</mark>`;
-    last = i + m[0].length;
-  }
-  return out + esc(text.slice(last));
-}
+const searchable = docs.map((d) => `${d.designator} ${d.name} ${d.slug}`.toLowerCase());
 
 function matches(d: SearchDoc, text: string, words: string[], rx: RegExp | null) {
   if (rx) return rx.test(text);
   return words.every((word) => text.includes(word));
 }
 
-function row(d: SearchDoc, level: number, matching: Set<number>) {
-  const pad = 12 + level * 22;
-  const suite = d.children.length > 0;
-  const children = suite
-    ? `<ul class="list" role="group" data-children-for="${esc(d.slug)}"></ul>`
-    : '';
-  const count = d.children.length;
-  const version = d.versions
-    ? `<span class="cnt">${d.versions} version${d.versions === 1 ? '' : 's'}</span>`
-    : '';
-  const cat = `<span class="cat${suite ? ' suite' : ''}">${esc(d.cat || (suite ? 'SUITE' : ''))}</span>`;
-  const href = suite ? `https://pub.smpte.org/doc/${encodeURIComponent(d.slug)}/` : pdf(d);
-  const body = `${cat}<a href="${href}" target="_blank" rel="noopener">${highlight(d.name, wordsForHighlight)}</a>${suite ? `<span class="cnt">${count} part${count === 1 ? '' : 's'}</span>` : version}`;
-  return `<li class="row${suite ? ' suite' : ''}" role="treeitem" aria-level="${level + 1}" tabindex="-1" data-slug="${esc(d.slug)}" data-id="${d.id}" data-preview="/detail/${esc(d.slug)}" style="padding-left:${pad}px"><details${suite && autoOpen && hasMatchingChild(d, matching) ? ' open' : ''}><summary><span class="tg-sp"></span><span class="slug">${esc(d.designator)}</span><span class="title">${body}</span></summary>${children}${!suite ? '<ul class="versions"></ul>' : ''}</details></li>`;
-}
+const row = (d: SearchDoc, level: number, matching: Set<number>) =>
+  treeRow(
+    d,
+    level,
+    wordsForHighlight,
+    d.children.length > 0 && autoOpen && hasMatchingChild(d, matching),
+  );
 
 let wordsForHighlight: string[] = [];
 let autoOpen = false;
@@ -143,7 +80,7 @@ function renderChildren(list: HTMLUListElement, parent: SearchDoc, matching?: Se
     .filter((id) => ids.has(id))
     .map((id) =>
       row(
-        byId.get(id)!,
+        docs[id],
         Number(list.closest<HTMLElement>('.row')?.getAttribute('aria-level') || 1),
         ids,
       ),
@@ -154,9 +91,7 @@ function renderChildren(list: HTMLUListElement, parent: SearchDoc, matching?: Se
 
 function render(ids: Set<number>, q: string) {
   const visible = new Set(ids);
-  for (const id of [...ids])
-    for (let d = byId.get(id); d; d = d.parent >= 0 ? byId.get(d.parent) : undefined)
-      visible.add(d.id);
+  for (const id of [...ids]) for (let d = docs[id]; d; d = docs[d.parent]) visible.add(d.id);
   wordsForHighlight = q.trim().split(/\s+/).filter(Boolean);
   autoOpen = Boolean(q || category.value || regex.checked);
   results.innerHTML =
@@ -167,7 +102,7 @@ function render(ids: Set<number>, q: string) {
 }
 
 function renderAutocomplete() {
-  const q = norm(query.value.trim());
+  const q = query.value.trim().toLowerCase();
   if (!q) {
     closeAc();
     acList.innerHTML = '';
@@ -192,7 +127,7 @@ function renderAutocomplete() {
 }
 
 function renderLocalSearch() {
-  const q = norm(query.value.trim());
+  const q = query.value.trim().toLowerCase();
   const cat = category.value;
   let rx: RegExp | null = null;
   if (regex.checked && q) {
@@ -593,7 +528,7 @@ results.addEventListener('keydown', (event) => {
       if (details) {
         details.open = !details.open;
         if (details.open && details.dataset.hydrated !== '1') {
-          const parent = byId.get(Number(row.dataset.id));
+          const parent = docs[Number(row.dataset.id)];
           const children = details.querySelector<HTMLUListElement>(':scope > .list');
           if (parent?.children.length && children) renderChildren(children, parent);
         }
@@ -637,18 +572,7 @@ function pickAc(item: HTMLElement) {
   localSearch();
 }
 query.addEventListener('blur', () => setTimeout(closeAc, 100));
-category.addEventListener('change', () => {
-  detailController?.abort();
-  localSearch();
-});
-regex.addEventListener('change', () => {
-  detailController?.abort();
-  localSearch();
-});
-full.addEventListener('change', () => {
-  detailController?.abort();
-  localSearch();
-});
+for (const control of [category, regex, full]) control.addEventListener('change', localSearch);
 form.addEventListener('submit', (e) => {
   e.preventDefault();
   localSearch();

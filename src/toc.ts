@@ -33,8 +33,6 @@ export const isBlob = (chunk: string) => new RegExp(`\\S{${NOISE_CONFIG.blobRun}
 export const noiseReason = (chunk: string): NoiseReason | null =>
   isTableOfContents(chunk) ? 'toc' : isBlob(chunk) ? 'blob' : null;
 
-export const isNoise = (chunk: string) => noiseReason(chunk) !== null;
-
 /**
  * Index of the first match of `rx` in `text` that is NOT in a TOC or binary blob, or -1.
  * `onSkip` is called once per match that was rejected, so callers can log or count them.
@@ -46,11 +44,14 @@ export function firstBodyMatch(
   window: number = NOISE_CONFIG.window,
 ): number {
   const g = new RegExp(rx.source, rx.flags.includes('g') ? rx.flags : rx.flags + 'g');
-  for (const m of text.matchAll(g)) {
-    const i = m.index ?? 0;
+  for (let m = g.exec(text); m; m = g.exec(text)) {
+    const i = m.index;
     const reason = noiseReason(text.slice(Math.max(0, i - window), i + window));
     if (!reason) return i;
     onSkip?.(reason, i);
+    // The rest of this window is the same TOC/blob, so a 1-character pattern must not re-test
+    // thousands of overlapping windows (it took ~3s per request).
+    g.lastIndex = Math.max(g.lastIndex, i + window);
   }
   return -1;
 }

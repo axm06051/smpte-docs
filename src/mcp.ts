@@ -1,5 +1,4 @@
 import { timingSafeEqual } from 'node:crypto';
-import { Database } from 'bun:sqlite';
 import { createMcpHandler, McpServer, ResourceTemplate } from '@modelcontextprotocol/server';
 import {
   registerAppResource,
@@ -8,35 +7,17 @@ import {
 } from '@modelcontextprotocol/ext-apps/server';
 import { z } from 'zod';
 import RAW from './catalog';
-import { logger } from './logger';
+import { db, rowIds } from './db';
+import { logger, since } from './logger';
+import { BASE, esc, pl, tokens as wordsOf } from './shared';
 import { noiseReason } from './toc';
 
-const DB_PATH = '.data/searchindex.sqlite';
-const db = (() => {
-  try {
-    return new Database(DB_PATH, { readonly: true });
-  } catch (error) {
-    logger.fatal('search index cannot be opened; build it with `bun run index`', {
-      path: DB_PATH,
-      error,
-    });
-    throw error;
-  }
-})();
 const docs = new Map(RAW.map(([slug, title]) => [slug, title]));
 const MCP_TOKEN = process.env.MCP_TOKEN || '';
-const BASE = 'https://pub.smpte.org';
 
 const resourceUri = 'ui://smpte-search/search.html';
 const documentUri = 'smpte://doc/{slug}';
 
-// The index holds one row per document ("st2110-21") and one per published edition
-// ("st2110-21_st2110-21-2017"). Map every slug to its rowid so reads never scan the table.
-const rowIds = new Map(
-  (db.query('SELECT rowid AS id, slug FROM docs').all() as { id: number; slug: string }[]).map(
-    (r) => [r.slug, r.id],
-  ),
-);
 const baseOf = (slug: string) => slug.split('_')[0];
 const titleOf = (slug: string) => docs.get(baseOf(slug)) ?? slug;
 const editionsByBase = new Map<string, string[]>();
@@ -47,18 +28,8 @@ for (const slug of rowIds.keys()) {
   editionsByBase.set(baseOf(slug), list);
 }
 
-const esc = (value: unknown) =>
-  String(value ?? '').replace(
-    /[&<>"']/g,
-    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!,
-  );
-
-const tokens = (q: string) =>
-  q
-    .toLowerCase()
-    .replace(/[^a-z0-9-\s]/g, ' ')
-    .split(/\s+/)
-    .filter((w) => /[a-z0-9]/.test(w));
+// Like the page's tokens(), but a bare "-" is not a search term.
+const tokens = (q: string) => wordsOf(q).filter((w) => /[a-z0-9]/.test(w));
 
 const STOP = new Set(
   'a an and are as at be by can do does for from how i in is it my of on or that the this to what when where which why with'.split(
@@ -199,7 +170,7 @@ const searchDocs = (q: string, limit: number): Hit[] => {
   logger.trace('SMPTE full-text query completed', {
     strategy: 'AND',
     rows: rows.length,
-    ms: +(performance.now() - started).toFixed(2),
+    ms: since(started),
   });
 
   if (!rows.length && words.length > 1) {
@@ -281,14 +252,14 @@ const handler = createMcpHandler(() => {
         logger.info('SMPTE search completed', {
           query: q,
           results: results.length,
-          ms: +(performance.now() - started).toFixed(2),
+          ms: since(started),
         });
 
         const html = `<form data-tool="search_smpte">
   <input name="q" value="${esc(q)}" aria-label="Search SMPTE documentation" autofocus>
   <button type="submit">Search</button>
 </form>
-<p>${results.length} result${results.length === 1 ? '' : 's'} for <b>${esc(q)}</b></p>
+<p>${results.length} result${pl(results.length)} for <b>${esc(q)}</b></p>
 <ul>
 ${
   results
@@ -465,7 +436,7 @@ export const mcp = {
         method: req.method,
         path,
         status: response.status,
-        ms: +(performance.now() - started).toFixed(2),
+        ms: since(started),
       });
       return response;
     } catch (error) {
