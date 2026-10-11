@@ -97,11 +97,11 @@ test('theme is still applied before any styles can paint', async ({ request }) =
   );
 });
 
-test('legacy fixed-name assets still work', async ({ request }) => {
+test('the old fixed-name asset URLs are gone (only content-hashed assets remain)', async ({
+  request,
+}) => {
   for (const path of ['/app.js', '/htmx.js', '/style.css'])
-    expect((await request.get(path, { headers: br })).headers()['content-encoding'], path).toBe(
-      'br',
-    );
+    expect((await request.get(path)).status(), path).toBe(404);
 });
 
 test('fragments carry validators and revalidate with a 304', async ({ request }) => {

@@ -1,6 +1,7 @@
 import type { SearchDoc } from '../../catalog/doc';
 import { esc } from '../../platform/text';
-import { highlight, previewHtml, treeRow } from '../render';
+import { previewHtml } from '../../views/preview';
+import { highlight, treeRow } from '../../views/row';
 
 // ids are array indexes, so docs[id] is the document and docs[-1] (no parent) is undefined.
 const docs = JSON.parse(document.getElementById('search-data')!.textContent!) as SearchDoc[];
@@ -20,7 +21,7 @@ const acPrev = document.getElementById('acPrev') as HTMLElement;
 
 const bySlug = new Map(docs.map((d) => [d.slug, d]));
 
-// previewHtml (shared.ts) is the markup the server's /detail/<slug> fragment produces too, built here
+// previewHtml (views/preview.ts) is the markup the server's /detail/<slug> fragment produces too, built here
 // from data the page already has, so hovering a suggestion costs no request.
 let shownPreview = '';
 function showPreview(slug: string | undefined) {
@@ -57,7 +58,7 @@ function setAcActive(i: number) {
 }
 const searchable = docs.map((d) => `${d.designator} ${d.name} ${d.slug}`.toLowerCase());
 
-function matches(d: SearchDoc, text: string, words: string[], rx: RegExp | null) {
+function matches(text: string, words: string[], rx: RegExp | null) {
   if (rx) return rx.test(text);
   return words.every((word) => text.includes(word));
 }
@@ -112,7 +113,7 @@ function renderAutocomplete() {
     return;
   }
   const words = q.split(/\s+/).filter(Boolean);
-  const matches = docs.filter((d, i) => words.every((w) => searchable[i].includes(w))).slice(0, 8);
+  const matches = docs.filter((_, i) => words.every((w) => searchable[i].includes(w))).slice(0, 8);
   acList.innerHTML = matches.length
     ? matches
         .map(
@@ -145,7 +146,7 @@ function renderLocalSearch() {
   for (let i = 0; i < docs.length; i++) {
     const d = docs[i];
     if (cat && d.cat !== cat) continue;
-    if (!q || matches(d, searchable[i], words, rx)) ids.add(d.id);
+    if (!q || matches(searchable[i], words, rx)) ids.add(d.id);
   }
   render(ids, q);
 }
@@ -208,21 +209,7 @@ function updateHash() {
   history.replaceState(null, '', p.toString() ? `#${p}` : `${location.pathname}${location.search}`);
 }
 
-function restoreHash() {
-  const p = new URLSearchParams(location.hash.replace(/^#/, ''));
-  query.value = p.get('q') || '';
-  category.value = /^(ST|RP|EG|RDD|OV)$/.test(p.get('cat') || '') ? p.get('cat')! : '';
-  regex.checked = p.get('re') === '1';
-  localSearch();
-  requestAnimationFrame(() => {
-    const selected = rowFor(p.get('sel'));
-    if (selected) selectRow(selected);
-  });
-}
-
 const rows = () => Array.from(results.querySelectorAll<HTMLElement>(':scope > .row'));
-const rowFor = (slug: string | null) =>
-  slug ? results.querySelector<HTMLElement>(`.row[data-slug="${CSS.escape(slug)}"]`) : null;
 function selectRow(row: HTMLElement, focus = false) {
   rows().forEach((el) => {
     const selected = el === row;

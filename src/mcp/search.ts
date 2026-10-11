@@ -42,7 +42,7 @@ const titleIndex = docs.map(({ slug, title }) => ({
   all: new Set(tokens(`${title} ${slug}`)),
 }));
 
-export type Hit = {
+type Hit = {
   slug: string;
   title: string;
   uri: string;

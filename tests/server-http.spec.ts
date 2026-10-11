@@ -23,8 +23,8 @@ test('index page honours Accept-Encoding instead of always sending gzip', async 
   expect(zipped.headers()['content-encoding']).toBe('gzip');
 });
 
-test('static assets are cached, compressed and revalidate with a 304', async ({ request }) => {
-  for (const path of ['/htmx.js', '/app.js', '/style.css']) {
+test('favicons are cached, compressed and revalidate with a 304', async ({ request }) => {
+  for (const path of ['/favicon.ico', '/favicon.svg', '/site.webmanifest']) {
     const res = await request.get(path, { headers: gz });
     expect(res.status(), path).toBe(200);
     expect(res.headers()['content-encoding'], path).toBe('gzip');

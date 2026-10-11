@@ -124,28 +124,6 @@ button.secondary {
 button.secondary:hover {
   background: var(--chip-hover);
 }
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 12px;
-}
-.chip {
-  background: var(--chip);
-  border: none;
-  padding: 4px 10px;
-  border-radius: 12px;
-  font-size: 12px;
-  cursor: pointer;
-  color: var(--fg);
-}
-.chip:hover {
-  background: var(--chip-hover);
-}
-.chip.active {
-  background: var(--primary);
-  color: #fff;
-}
 .meta {
   font-size: 12px;
   color: var(--muted);
@@ -208,14 +186,6 @@ button.secondary:hover {
   vertical-align: 1px;
   letter-spacing: 0.02em;
 }
-.row.parts-row {
-  padding-left: 32px;
-  font-size: 12px;
-  color: var(--muted);
-}
-.row.parts-row .slug {
-  color: var(--muted);
-}
 .empty {
   padding: 24px;
   text-align: center;
@@ -230,26 +200,6 @@ button.secondary:hover {
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
-}
-.toast {
-  position: fixed;
-  bottom: 16px;
-  right: 16px;
-  background: var(--ok);
-  color: #fff;
-  padding: 10px 16px;
-  border-radius: 4px;
-  font-size: 13px;
-  opacity: 0;
-  transition: opacity 0.25s;
-  pointer-events: none;
-  max-width: 60%;
-}
-.toast.show {
-  opacity: 1;
-}
-.toast.err {
-  background: var(--err);
 }
 
 /* ---- search / autocomplete ---- */
@@ -322,7 +272,6 @@ kbd {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.ac-more,
 .ac-none {
   padding: 6px 10px;
   font-size: 12px;
@@ -350,9 +299,6 @@ mark {
 }
 
 /* ---- tree ---- */
-.meta.busy {
-  opacity: 0.45;
-}
 .list {
   max-height: calc(100vh - 335px);
   min-height: 220px;
@@ -390,24 +336,8 @@ mark {
   padding: 0;
   line-height: 1.25;
 }
-
-.row.suite {
-  padding-top: 4px;
-  padding-bottom: 4px;
-}
-
-.row.suite > details,
-.row.suite > details > summary {
-  margin: 0;
-  padding: 0;
-  line-height: 1.25;
-}
 .row.suite .title a {
   font-weight: 600;
-}
-.row.ctx .title a,
-.row.ctx .slug {
-  opacity: 0.5;
 }
 .row.sel {
   background: var(--selected);
@@ -416,9 +346,6 @@ mark {
   outline: 2px solid var(--primary);
   outline-offset: -2px;
 }
-.row.flash {
-  animation: flash 1.4s ease-out;
-}
 @keyframes flash {
   from {
     background: var(--flash);
@@ -426,24 +353,6 @@ mark {
   to {
     background: transparent;
   }
-}
-.tg {
-  flex: 0 0 18px;
-  width: 18px;
-  height: 18px;
-  padding: 0;
-  line-height: 18px;
-  background: transparent;
-  color: var(--muted);
-  border-radius: 3px;
-  font-size: 12px;
-  transition: transform 0.12s;
-}
-.tg:hover {
-  background: var(--chip-hover);
-}
-.tg.open {
-  transform: rotate(90deg);
 }
 .tg-sp {
   flex: 0 0 18px;
@@ -511,28 +420,8 @@ mark {
   margin-top: 2px;
   line-height: 1.35;
 }
-.hint {
-  color: var(--muted);
-}
 
 /* ---- dated versions ---- */
-.row.ver {
-  font-size: 12px;
-  background: var(--version-bg);
-}
-.row.ver .slug {
-  text-transform: none;
-  color: var(--fg);
-}
-.row.msg {
-  font-size: 12px;
-  color: var(--muted);
-}
-.row.msg button {
-  padding: 2px 8px;
-  font-size: 12px;
-  margin-left: 6px;
-}
 .cat.st-active {
   background: var(--active-bg);
   color: var(--ok);
@@ -544,62 +433,6 @@ mark {
 .cat.kind {
   background: transparent;
   border: 1px solid var(--border);
-}
-.modal {
-  position: fixed;
-  inset: 0;
-  background: var(--modal-overlay);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 50;
-  padding: 16px;
-}
-.modal[hidden] {
-  display: none;
-}
-.mbox {
-  background: var(--control-bg);
-  border-radius: 8px;
-  padding: 16px;
-  width: min(640px, 100%);
-  max-height: 100%;
-  overflow: auto;
-}
-.mbox h2 {
-  font-size: 16px;
-  margin: 0 0 6px;
-}
-.mbox p {
-  font-size: 12px;
-  color: var(--muted);
-  margin: 0 0 8px;
-  line-height: 1.45;
-}
-.mbox textarea {
-  width: 100%;
-  height: 180px;
-  font:
-    12px ui-monospace,
-    Menlo,
-    Consolas,
-    monospace;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 8px;
-  color: var(--fg);
-  background: var(--control-bg);
-  color-scheme: inherit;
-}
-.mrow {
-  display: flex;
-  gap: 8px;
-  margin-top: 10px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-.mrow .grow {
-  flex: 1;
 }
 
 .versions {

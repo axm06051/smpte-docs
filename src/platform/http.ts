@@ -20,10 +20,10 @@ export const digest = (b: string | Uint8Array) =>
 // A fully prepared response body: raw + both encodings + a weak validator (weak because the bytes
 // differ per Content-Encoding even though the representation is the same).
 export type Blob = { raw: Bytes; gz: Bytes; br: Bytes; etag: string; type: string };
-export function makeBlob(raw: Bytes, type: string, gz?: Bytes): Blob {
+export function makeBlob(raw: Bytes, type: string): Blob {
   return {
     raw,
-    gz: gz ?? Bun.gzipSync(raw, { level: 9 }),
+    gz: Bun.gzipSync(raw, { level: 9 }),
     br: brotli(raw, PROD ? 11 : 5),
     etag: `W/"${digest(raw)}"`,
     type,

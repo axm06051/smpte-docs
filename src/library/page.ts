@@ -1,5 +1,5 @@
-// The HTML page and everything it loads: the inlined stylesheet, content-hashed app/htmx bundles,
-// the legacy fixed-name assets and the favicons.
+// The HTML page and everything it loads: the inlined stylesheet, content-hashed app/htmx bundles
+// and the favicons.
 import { existsSync, readdirSync } from 'node:fs';
 import { docs, roots, searchData } from '../catalog';
 import {
@@ -11,10 +11,9 @@ import {
   notFound,
   PROD,
   serveBlob,
-  SHORT,
 } from '../platform/http';
 import { logger, since } from '../platform/logger';
-import { treeRow } from './render';
+import { treeRow } from '../views/row';
 
 // First paint must not wait for JavaScript, but rendering every root row would add ~30 KB (gzip) to
 // every load.  So the first screenful is rendered here with the very function app.js uses
@@ -118,19 +117,15 @@ async function currentPage() {
   return page;
 }
 
-// Legacy fixed-name assets (/app.js, /style.css, /htmx.js): kept for compatibility with anything that
-// still links them.  Read + compressed once, revalidated by mtime so `bun --watch` rebuilds are seen.
+// Favicons: read + compressed once, revalidated by mtime.
 const assets = new Map<string, Blob & { mtime: number }>();
-async function staticAsset(req: Request, name: string, path: string, cc: string, preGz?: string) {
+async function staticAsset(req: Request, name: string, path: string, cc: string) {
   const f = Bun.file(path);
   let a = assets.get(name);
   const mtime = f.lastModified;
   if (!a || a.mtime !== mtime) {
     if (!(await f.exists())) return notFound();
-    const raw = new Uint8Array(await f.arrayBuffer());
-    const pre = preGz ? Bun.file(preGz) : null;
-    const gz = pre && (await pre.exists()) ? new Uint8Array(await pre.arrayBuffer()) : undefined;
-    a = { ...makeBlob(raw, f.type, gz), mtime };
+    a = { ...makeBlob(new Uint8Array(await f.arrayBuffer()), f.type), mtime };
     assets.set(name, a);
   }
   return serveBlob(req, a, cc);
@@ -144,16 +139,11 @@ export async function pageRoute(req: Request, u: URL): Promise<Response | null> 
   // public/favicon/* is served from the site root (the web manifest links /web-app-manifest-*.png).
   if (FAVICONS.has(u.pathname.slice(1)))
     return staticAsset(req, u.pathname, FAVICON_DIR + u.pathname.slice(1), 'public, max-age=86400');
-  if (u.pathname === '/htmx.js')
-    return staticAsset(req, u.pathname, HTMX_FILE, 'public, max-age=3600', `${HTMX_FILE}.gz`);
   if (u.pathname === '/' || u.pathname === '/index.html')
     return serveBlob(req, (await currentPage()).html, 'no-cache');
   if (u.pathname.startsWith('/assets/')) {
     const a = (await currentPage()).assets.get(u.pathname);
     return a ? serveBlob(req, a, IMMUTABLE) : notFound();
   }
-  // Only these files are public; everything else under ./src (server.ts, catalog/, ...) is not.
-  if (u.pathname === '/app.js' || u.pathname === '/style.css')
-    return staticAsset(req, u.pathname, CLIENT_DIR + u.pathname, SHORT);
   return null;
 }

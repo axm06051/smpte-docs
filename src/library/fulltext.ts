@@ -5,7 +5,6 @@ import { db, rowIds } from '../platform/db';
 import { logger, since } from '../platform/logger';
 import { escRe, tokens } from '../platform/text';
 import { firstBodyMatch } from '../platform/toc';
-import { highlight, mark } from './render';
 
 const fullSlugs = new Map<string, string[]>();
 for (const d of docs) {
@@ -108,12 +107,4 @@ export function fullSnippets(q: string, cat: string, re: boolean) {
       scanned,
     });
   return snippets;
-}
-export function highlightSnippet(s: string, q: string, re: boolean) {
-  if (re) {
-    try {
-      return mark(s, new RegExp(q, 'gi'));
-    } catch {}
-  }
-  return highlight(s, tokens(q), true);
 }

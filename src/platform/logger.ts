@@ -1,7 +1,7 @@
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
-export type LogLevel = 'TRACE' | 'DEBUG' | 'INFO' | 'WARNING' | 'ERROR' | 'FATAL';
+type LogLevel = 'TRACE' | 'DEBUG' | 'INFO' | 'WARNING' | 'ERROR' | 'FATAL';
 
 const LOG_CONFIG: Record<LogLevel, { rank: number; color: string }> = {
   TRACE: { rank: 10, color: 'gray' },

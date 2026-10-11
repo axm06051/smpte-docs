@@ -1,11 +1,8 @@
-// Markup used by both the page (client/app.ts, bundled for the browser) and the server slices.
-// Keep it free of Bun/Node imports: the browser bundles it and the tests import it under Node.
-//
-// The server renders the first screenful of rows and the /detail fragments with these same
-// functions, so what it sends is byte-for-byte what the client would have rendered (no layout shift).
-
-import { BASE, docUrl, type SearchDoc } from '../catalog/doc';
-import { esc, escRe, pl } from '../platform/text';
+// Tree-row markup and text highlighting.  Used by the server (first paint, /search) and bundled into
+// the browser (client/app.ts), so it must stay free of Bun/Node imports.  The server's first screenful
+// is rendered with these same functions, so what it sends is byte-for-byte what the client renders.
+import { docUrl, type SearchDoc } from '../catalog/doc';
+import { esc, escRe, pl, tokens } from '../platform/text';
 
 // Wrap every match of the (global) regex in <mark>; everything else is escaped.
 export function mark(text: string, re: RegExp) {
@@ -25,35 +22,6 @@ export const highlight = (text: string, words: string[], wordStart = false) =>
     : esc(text);
 
 export const cnt = (n: number, word: string) => `<span class="cnt">${n} ${word}${pl(n)}</span>`;
-
-// The small card shown for a document (autocomplete preview and the /detail fragment).
-export function previewHtml(d: SearchDoc, docs: SearchDoc[]) {
-  const crumbs: string[] = [];
-  for (let p = docs[d.parent]; p; p = docs[p.parent]) crumbs.unshift(p.designator);
-  const parent = docs[d.parent];
-  const n = d.children.length;
-  const meta = (html: string) => `<div class="pv-meta">${html}</div>`;
-  let body = `<div class="pv-top"><span class="cat">${esc(d.cat)}</span><span class="pv-des">${esc(d.designator)}</span></div><div class="pv-title">${esc(d.name)}</div>`;
-  if (crumbs.length) body += meta(`Suite: <b>${esc(crumbs.join(' › '))}</b>`);
-  if (parent)
-    body += meta(
-      `Part ${parent.children.indexOf(d.id) + 1} of ${parent.children.length} in ${esc(parent.designator)}`,
-    );
-  if (n) {
-    const first = d.children
-      .slice(0, 5)
-      .map((id) => esc(docs[id].designator))
-      .join(', ');
-    body += meta(`<b>${n}</b> part${pl(n)}: ${first}${n > 5 ? ` &hellip; +${n - 5} more` : ''}`);
-  }
-  if (d.versions) body += meta(`<b>${d.versions}</b> dated version${pl(d.versions)}`);
-  return (
-    body +
-    meta(
-      `<a href="${BASE}/doc/${esc(d.slug)}/" target="_blank" rel="noopener">Open document page &#8599;</a>`,
-    )
-  );
-}
 
 type RowParts = {
   href: string;
@@ -84,3 +52,13 @@ export const treeRow = (d: SearchDoc, level: number, words: string[] = [], open 
       : '<ul class="versions"></ul>',
   });
 };
+
+// A PDF-text snippet: regex mode highlights the pattern itself, otherwise the query's words.
+export function highlightSnippet(s: string, q: string, re: boolean) {
+  if (re) {
+    try {
+      return mark(s, new RegExp(q, 'gi'));
+    } catch {}
+  }
+  return highlight(s, tokens(q), true);
+}

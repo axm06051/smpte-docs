@@ -7,9 +7,11 @@ const read = (path: string) => readFileSync(path, 'utf8');
 export const serverSource = () =>
   [
     'src/server.ts',
-    ...readdirSync('src/library')
-      .filter((f) => f.endsWith('.ts'))
-      .map((f) => `src/library/${f}`),
+    ...['src/library', 'src/views'].flatMap((dir) =>
+      readdirSync(dir)
+        .filter((f) => f.endsWith('.ts'))
+        .map((f) => `${dir}/${f}`),
+    ),
   ]
     .map(read)
     .join('\n');

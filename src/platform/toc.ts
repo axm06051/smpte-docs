@@ -15,7 +15,7 @@ export const NOISE_CONFIG = {
   window: 200,
 } as const;
 
-export type NoiseReason = 'toc' | 'blob';
+type NoiseReason = 'toc' | 'blob';
 
 // Table of contents: dot leaders or a run of section numbers.
 const DOT_LEADERS = new RegExp(`\\.{${NOISE_CONFIG.tocDotRun},}`);
@@ -30,7 +30,7 @@ export const isTableOfContents = (chunk: string) => {
 };
 
 // Embedded binary (base64 images etc.) extracted as text: very long runs with no whitespace.
-export const isBlob = (chunk: string) => BLOB.test(chunk);
+const isBlob = (chunk: string) => BLOB.test(chunk);
 
 export const noiseReason = (chunk: string): NoiseReason | null =>
   isTableOfContents(chunk) ? 'toc' : isBlob(chunk) ? 'blob' : null;

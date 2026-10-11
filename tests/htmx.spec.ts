@@ -5,7 +5,8 @@ import { serverSource } from './support';
 const html = readFileSync('src/library/client/index.html', 'utf8');
 const server = serverSource();
 const app = readFileSync('src/library/client/app.ts', 'utf8');
-const shared = readFileSync('src/library/render.ts', 'utf8'); // markup shared by server and page
+// markup shared by server and page
+const shared = ['row', 'preview'].map((f) => readFileSync(`src/views/${f}.ts`, 'utf8')).join('\n');
 
 test('responsive search keeps the normal query path local', () => {
   expect(html).not.toContain('hx-get="/search"');
@@ -78,7 +79,6 @@ test('HTMX tree rows retain stable selection and keyboard navigation hooks', () 
 test('HTMX migration preserves URL search state and search shortcuts', () => {
   expect(app).toContain('URLSearchParams');
   expect(app).toContain('history.replaceState');
-  expect(app).toContain('location.hash');
   expect(app).toContain("event.key.toLowerCase() === 'k'");
   expect(app).toContain("event.key === '/'");
 });
