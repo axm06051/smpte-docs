@@ -1,13 +1,26 @@
 $ErrorActionPreference = 'Stop'
 
-$port = $env:PORT
-if (-not $port) { $port = '3000'}
+$envFile = Join-Path $PSScriptRoot '..\.env'
+if (Test-Path $envFile) {
+  foreach ($line in Get-Content $envFile) {
+    $line = $line.Trim()
+    if (-not $line -or $line.StartsWith('#')) { continue }
+    $name, $value = $line -split '=', 2
+    $name = $name.Trim()
+    if (-not [Environment]::GetEnvironmentVariable($name)) {
+      [Environment]::SetEnvironmentVariable($name, $value.Trim().Trim('"', "'"))
+    }
+  }
+}
 
-$base = "http://localhost:$port/mcp"
+$port = if ($env:PORT) { $env:PORT } else { '3000' }
+$base = if ($BaseUrl) { "$($BaseUrl.TrimEnd('/'))/mcp" } else { "http://localhost:$port/mcp" }
+
 $headers = @{
   'Content-Type' = 'application/json'
-  'Accept' = 'application/json, text/event-stream'
+  'Accept'       = 'application/json, text/event-stream'
 }
+if ($env:MCP_TOKEN) { $headers['Authorization'] = "Bearer $($env:MCP_TOKEN)" }
 
 function Invoke-Mcp($id, $method, $params = @{}) {
   $body = @{

@@ -7,7 +7,7 @@ db.run('DROP TABLE IF EXISTS docs');
 db.run('CREATE VIRTUAL TABLE docs USING fts5(slug UNINDEXED, text)');
 
 const files = await Array.fromAsync(
-  new Bun.Glob('**/*.pdf').scan({ cwd: '.data/lib', absolute: true }),
+  new Bun.Glob('**/*.{pdf,PDF}').scan({ cwd: '.data/lib', absolute: true }),
 );
 const insert = db.prepare('INSERT INTO docs(slug, text) VALUES (?, ?)');
 
@@ -53,6 +53,22 @@ async function pdfText(file: string) {
   }
 }
 
+// Optional cache of extracted text keyed by the PDF's content hash (Docker keeps it in a BuildKit
+// cache mount), so an unchanged PDF is never OCR'd twice, even when the layer cache is lost.
+const cacheDir = process.env.INDEX_CACHE;
+if (cacheDir) mkdirSync(cacheDir, { recursive: true });
+async function indexedText(file: string) {
+  if (!cacheDir) return (await pdfText(file)).toLowerCase();
+  const cached = Bun.file(
+    join(cacheDir, `${Bun.hash(await Bun.file(file).bytes()).toString(36)}.txt`),
+  );
+  if (await cached.exists()) return cached.text();
+  const text = (await pdfText(file)).toLowerCase();
+  // Short text means extraction failed (missing tool, bad PDF): retry next build instead of caching it.
+  if (text.length >= 40) await Bun.write(cached, text);
+  return text;
+}
+
 // Extract in parallel (this was ~8 min serial); results stay in file order so output is unchanged.
 const texts: string[] = new Array(files.length).fill('');
 let cursor = 0;
@@ -62,7 +78,7 @@ await Promise.all(
       const i = cursor++;
       if (!getSlug(files[i].split(/[\\/]/).pop()!)) continue;
       console.log(`Index ${files[i]}`);
-      texts[i] = (await pdfText(files[i])).toLowerCase();
+      texts[i] = await indexedText(files[i]);
     }
   }),
 );
